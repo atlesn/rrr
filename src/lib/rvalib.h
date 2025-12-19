@@ -67,6 +67,8 @@ typedef struct RVAEncoderContext {
 	const char *filename_suffix;
 	RVAFrameBuffer *frame_buf;
 	AVRational time_base;
+	int duration;
+	int rounds;
 } RVAEncoderContext;
 
 typedef struct RVADecoderContext {
@@ -156,7 +158,25 @@ void rva_init_encoder(
 		const char *filename_suffix,
 		volatile int *flush_now,
 		RVAFrameBuffer *frame_buf,
-		AVRational time_base
+		AVRational time_base,
+		int duration,
+		int rounds
+);
+int rva_start(
+		RVAThreadContext *threads,
+		int thread_count
+);
+int rva_tick(
+		int *done,
+		RVAThreadContext *threads,
+		int thread_count,
+		volatile int *stop_now,
+		volatile int *thread_exited
+);
+int rva_stop(
+		RVAThreadContext *threads,
+		int thread_count,
+		volatile int *stop_now
 );
 
 int rva_run(

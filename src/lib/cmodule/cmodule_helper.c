@@ -473,6 +473,7 @@ struct rrr_cmodule_read_from_fork_callback_data {
 	int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
 	void *final_callback_arg;
 	int read_count;
+	int done;
 };
 
 static int __rrr_cmodule_helper_read_from_fork_message_callback (
@@ -584,6 +585,8 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
 ) {
+	int ret = 0;
+
 	struct rrr_msg msg_copy = *msg;
 
 	(void)(data_size);
@@ -602,6 +605,12 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_CTRL_F_PONG);
 	}
 
+	if (RRR_MSG_CTRL_F_HAS(&msg_copy, RRR_MSG_CTRL_F_DONE)) {
+		RRR_DBG_1("Received done signal from worker %s\n", callback_data->worker->name);
+		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_CTRL_F_DONE);
+		callback_data->done = 1;
+	}
+
 	// CTRL type is returned by FLAGS() macro, clear it to
 	// make sure no unknown flags are set
 	RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_TYPE_CTRL);
@@ -611,7 +620,7 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 				RRR_MSG_CTRL_FLAGS(&msg_copy), callback_data->worker->name);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_t data_size, void *arg) {
@@ -659,33 +668,35 @@ static int __rrr_cmodule_helper_read_from_worker (
 	}
 
 	struct rrr_cmodule_read_from_fork_callback_data callback_data = {
-			worker,
-			thread_data,
-			final_callback,
-			final_callback_arg,
-			0
+		worker,
+		thread_data,
+		final_callback,
+		final_callback_arg,
+		0,
+		0
 	};
 
-	if ((ret = rrr_cmodule_channel_receive_messages (
+	ret = rrr_cmodule_channel_receive_messages (
 			amount,
 			worker->channel_to_parent,
 			__rrr_cmodule_helper_read_from_fork_callback,
 			&callback_data
-	)) != 0) {
-		if (ret == RRR_CMODULE_CHANNEL_EMPTY) {
-			ret = 0;
-			goto out;
+	);
+
+	ret &= ~(RRR_CMODULE_CHANNEL_EMPTY);
+
+	if (ret == 0) {
+		if (callback_data.done) {
+			ret = RRR_EVENT_EXIT;
 		}
-		else if (ret == RRR_EVENT_EXIT) {
-			// Propagate
-			goto out;
-		}
-		else {
-			RRR_MSG_0("Error %i while reading from worker fork %s\n",
-					ret, worker->name);
-			ret = 1;
-			goto out;
-		}
+	}
+	else if (ret == RRR_EVENT_EXIT) {
+		// Propagate
+	}
+	else {
+		RRR_MSG_0("Error %i while reading from worker fork %s\n",
+				ret, worker->name);
+		ret = 1;
 	}
 
 	out:

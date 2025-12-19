@@ -21,6 +21,8 @@
  */
 
 #include "rvalib.h"
+#include "rrr_strerror.h"
+#include "util/posix.h"
 
 #include <assert.h>
 #include <libavutil/pixfmt.h>
@@ -51,7 +53,7 @@
 	buf->count == 0
 
 #define BUF_ALLOC(buf, alloc)                         \
-	err = pthread_mutex_init(&buf.mutex, NULL);   \
+	err = rrr_posix_mutex_init(&buf.mutex, 0);    \
 	if (err) {                                    \
 		rva_error("Failed to initialize mutex");\
 		abort();                              \
@@ -84,7 +86,7 @@
 	if (BUF_FULL(buf)) {                    \
 	  rva_error("Buffer for " QUOTE(type) " full\n"); \
 	  pthread_mutex_unlock(&buf->mutex);    \
-	  usleep(100 * 1000);                   \
+	  rrr_posix_usleep(100 * 1000);         \
 	  goto PASTE(type,retry);               \
 	}                                       \
 	BUF_WRITE_BEGIN(buf, type);             \
@@ -99,7 +101,7 @@
 	pthread_mutex_lock(&buf->mutex);        \
 	if (BUF_EMPTY(buf)) {                   \
 	  pthread_mutex_unlock(&buf->mutex);    \
-	  usleep(100 * 1000);                   \
+	  rrr_posix_usleep(100 * 1000);         \
 	  goto retry;                           \
 	}                                       \
 	BUF_READ_BEGIN(buf, type);              \
@@ -534,6 +536,8 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 	uint8_t filename_index = 0;
 	char filename_indexed[PATH_MAX];
 	double elapsed_s = 0.0f;
+	int64_t pts_offset = 0;
+	int rounds = ctx->rounds;
 
 	frame = av_frame_alloc();
 	if (!frame) {
@@ -585,7 +589,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 					// OK
 				}
 				else {
-					rva_error("Failed to unlink %s: %s\n", filename_indexed, strerror(errno));
+					rva_error("Failed to unlink %s: %s\n", filename_indexed, rrr_strerror(errno));
 					goto fail;
 				}
 
@@ -604,7 +608,13 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 				state |= ENCODER_STATE_RUN;
 			}
 
-			elapsed_s = (double) frame->pts * ((double) octx.avctx->time_base.num / (double) octx.avctx->time_base.den);
+			elapsed_s = (double) (frame->pts - pts_offset) * ((double) octx.avctx->time_base.num / (double) octx.avctx->time_base.den);
+
+			if (ctx->duration > 0 && elapsed_s >= ctx->duration) {
+				pts_offset = frame->pts;
+				rva_info("Specified duration reached, finalizing file\n");
+				goto done;
+			}
 
 			// printf("Elapsed %lf pts %li tb %i/%i\n", elapsed_s, frame->pts, frame->time_base.num, frame->time_base.den);
 
@@ -638,7 +648,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 
 			err = av_interleaved_write_frame(octx.oc, packet);
 			if (err) {
-				rva_error("Failed to write packet: %s\n", strerror(errno));
+				rva_error("Failed to write packet: %s\n", rrr_strerror(errno));
 				goto fail;
 			}
 
@@ -671,9 +681,14 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 	}
 
 	if (!(*thread->stop_now)) {
-		rva_close_encoder(&octx);
-		state &= ~(ENCODER_STATE_FLUSH|ENCODER_STATE_RUN);
-		goto encode;
+		if (--rounds <= 0) {
+			rva_info("Specified number of rounds reached, not starting new encoding round.\n");
+		}
+		else {
+			rva_close_encoder(&octx);
+			state &= ~(ENCODER_STATE_FLUSH|ENCODER_STATE_RUN);
+			goto encode;
+		}
 	}
 
 	goto out;
@@ -823,7 +838,7 @@ static int rva_generator_main(RVAThreadContext *thread, void *arg) {
 		again:
 		err = av_buffersink_get_frame(fctx.buffersink_ctx, filt_frame);
 		if (err == AVERROR(EAGAIN)) {
-			usleep(100 * 1000);
+			rrr_posix_usleep(100 * 1000);
 			goto again;
 		}
 		else if (err == AVERROR_EOF) {
@@ -841,7 +856,7 @@ static int rva_generator_main(RVAThreadContext *thread, void *arg) {
 		int64_t diff = frames - expected;
 
 		if (diff > 0) {
-			usleep(((double) diff / (double) ctx->time_base.den) * 1 * 1000 * 1000);
+			rrr_posix_usleep(((double) diff / (double) ctx->time_base.den) * 1 * 1000 * 1000);
 		}
 
 		THREAD_WITH_BUF_WRITE(thread, frame_buf, AVFrame,
@@ -996,7 +1011,9 @@ void rva_init_encoder(
 		const char *filename_suffix,
 		volatile int *flush_now,
 		RVAFrameBuffer *frame_buf,
-		AVRational time_base
+		AVRational time_base,
+		int duration,
+		int rounds
 ) {
 	memset(ectx, '\0', sizeof(*ectx));
 	memset(tctx, '\0', sizeof(*tctx));
@@ -1006,6 +1023,8 @@ void rva_init_encoder(
 	ectx->flush_now = flush_now;
 	ectx->frame_buf = frame_buf;
 	ectx->time_base = time_base;
+	ectx->duration = duration;
+	ectx->rounds = rounds;
 
 	tctx->arg = ectx;
 	tctx->main = rva_encoder_main;
@@ -1014,14 +1033,95 @@ void rva_init_encoder(
 	tctx->thread_exited = thread_exited;
 }
 
-int rva_run(
+int rva_start(
+		RVAThreadContext *threads,
+		int thread_count
+) {
+	int err, ret = 0;
+
+	for (int i = 0; i < thread_count; i++) {
+		RVAThreadContext *thread = &threads[i];
+
+		if (!thread->main)
+			continue;
+
+		err = rva_start_thread(thread);
+		if (err)
+			goto fail;
+	}
+
+	goto out;
+	fail:
+		ret = 1;
+	out:
+		return ret;
+}
+
+int rva_tick(
+		int *done,
+		RVAThreadContext *threads,
+		int thread_count,
+		volatile int *stop_now,
+		volatile int *thread_exited
+) {
+	int ret = 0, running = 0;
+
+	*done = 0;
+
+	for (int i = 0; i < thread_count; i++) {
+		RVAThreadContext *thread = &threads[i];
+
+		if (!thread->running)
+			continue;
+		running = 1;
+
+		if (rva_thread_check_heartbeat(thread)) {
+			goto fail;
+		}
+	}
+
+	if (*stop_now || *thread_exited || !running) {
+		*done = 1;
+	}
+
+	goto out;
+	fail:
+		ret = 1;
+	out:
+		return ret;
+}
+
+int rva_stop(
+		RVAThreadContext *threads,
+		int thread_count,
+		volatile int *stop_now
+) {
+	int ret = 0;
+	void *res;
+
+	*stop_now = 1;
+
+	for (int i = 0; i < thread_count; i++) {
+		RVAThreadContext *thread = &threads[i];
+
+		if (thread->running) {
+			pthread_join(thread->thread, &res);
+			rva_info("Joined with %s\n", thread->name);
+			if ((intptr_t) res)
+				ret = 1;
+		}
+	}
+
+	return ret;
+}
+
+int rva_run (
 		RVAThreadContext *threads,
 		int thread_count,
 		volatile int *stop_now,
 		volatile int *thread_exited
 ) {
 	int err, ret = 0;
-	void *res;
 
 	for (int i = 0; i < thread_count; i++) {
 		RVAThreadContext *thread = &threads[i];
@@ -1035,25 +1135,16 @@ int rva_run(
 	}
 
 	for (;;) {
-		int running = 0;
+		int done = 0;
 
-		for (int i = 0; i < thread_count; i++) {
-			RVAThreadContext *thread = &threads[i];
+		err = rva_tick(&done, threads, thread_count, stop_now, thread_exited);
+		if (err)
+			goto fail;
 
-			if (!thread->running)
-				continue;
-			running = 1;
-
-			if (rva_thread_check_heartbeat(thread)) {
-				goto fail;
-			}
-		}
-
-		if (*stop_now || *thread_exited || !running) {
+		if (done)
 			break;
-		}
 
-		usleep(100 * 1000);
+		rrr_posix_usleep(100 * 1000);
 	}
 
 	goto out;
@@ -1061,16 +1152,6 @@ int rva_run(
 		ret = 1;
 	out:
 		rva_info("Main thread exiting\n");
-		*stop_now = 1;
-		for (int i = 0; i < thread_count; i++) {
-			RVAThreadContext *thread = &threads[i];
-
-			if (thread->running) {
-				pthread_join(thread->thread, &res);
-				rva_info("Joined with %s\n", thread->name);
-				if ((intptr_t) res)
-					ret = 1;
-			}
-		}
+		ret |= rva_stop(threads, thread_count, stop_now);
 		return ret;
 }

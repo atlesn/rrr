@@ -60,8 +60,31 @@ struct ffmpeg_data {
 	char *output_directory;
 
 	rrr_setting_uint duration_s;
+	rrr_setting_uint rounds;
 
 	enum rrr_cmodule_process_mode process_mode;
+};
+
+enum ffmpeg_thread_index {
+	THREAD_READER,
+	THREAD_DECODER,
+	THREAD_ENCODER,
+	THREAD_COUNT
+};
+
+struct ffmpeg_worker_data {
+	volatile int stop_now;
+	volatile int thread_exited;
+	volatile int flush_now;
+	struct ffmpeg_data *ffmpeg_data;
+        struct rrr_cmodule_worker *worker;
+	RVASharedContext shctx;
+	RVAInputContext ictx;
+	RVAReaderContext rctx;
+	RVADecoderContext dctx;
+	RVAGeneratorContext gctx;
+	RVAEncoderContext ectx;
+	RVAThreadContext threads[THREAD_COUNT];
 };
 
 static void ffmpeg_data_cleanup(void *arg) {
@@ -96,6 +119,8 @@ static int ffmpeg_parse_config (struct ffmpeg_data *data, struct rrr_instance_co
 
 	// Undocumented parameter for testing, stop processing after the given amount of seconds
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ffmpeg_duration_s", duration_s, 0);
+	// Undocumented parameter for testing, process at most this amount of encoding rounds
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ffmpeg_rounds", rounds, 0);
 
 	out:
 	return ret;
@@ -106,12 +131,22 @@ static int ffmpeg_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 }
 
 static int ffmpeg_tick_callback (RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS) {
-	struct ffmpeg_data *data = private_arg;
+	struct ffmpeg_worker_data *data = private_arg;
 
 	(void)(worker);
 	(void)(data);
 
+	int done = 0;
+
 	*something_happened = 0;
+
+	if (rva_tick(&done, data->threads, THREAD_COUNT, &data->stop_now, &data->thread_exited) != 0)
+		return 1;
+	
+	if (done) {
+		RRR_DBG_1("Encoding done in worker fork of ffmpeg instance %s\n", INSTANCE_D_NAME(data->ffmpeg_data->thread_data));
+		rrr_event_dispatch_exit(rrr_cmodule_worker_get_event_queue(data->worker));
+	}
 
 	return 0;
 }
@@ -123,13 +158,68 @@ static int ffmpeg_fork_init_wrapper (
 
 	int ret = 0;
 
+	struct ffmpeg_worker_data worker_data = {
+		.ffmpeg_data = data,
+		.worker = worker
+	};
+
+	assert(data->source == NULL && "FFmpeg source URL not implemented");
+
+	if (chdir(data->output_directory) != 0) {
+		RRR_MSG_0("Failed to change working directory to %s in worker %s of ffmpeg instance %s: %s\n",
+			data->output_directory, worker->name, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if (rva_open_shared(&worker_data.shctx) != 0) {
+		RRR_MSG_0("Failed to open shared context in worker %s of ffmpeg instance %s\n",
+			worker->name, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	AVRational time_base = {1, 25};
+
+	rva_init_generator(
+			&worker_data.gctx,
+			&worker_data.threads[THREAD_DECODER],
+			&worker_data.stop_now,
+			&worker_data.thread_exited,
+			1920,
+			1080,
+			&worker_data.shctx.frame_buf,
+			time_base
+	);
+
+	rva_init_encoder(
+			&worker_data.ectx,
+			&worker_data.threads[THREAD_ENCODER],
+			&worker_data.stop_now,
+			&worker_data.thread_exited,
+			"out-",
+			".mp4",
+			&worker_data.flush_now,
+			&worker_data.shctx.frame_buf,
+			time_base,
+			rrr_int_from_biglength_bug_const(worker_data.ffmpeg_data->duration_s),
+			rrr_int_from_biglength_bug_const(worker_data.ffmpeg_data->rounds)
+	);
+
+	if (rva_start(worker_data.threads, THREAD_COUNT) != 0) {
+		RRR_MSG_0("Failed to start RVA threads in worker %s fork of ffmpeg instance %s\n",
+			worker->name, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
 	if (data->process_mode == RRR_CMODULE_PROCESS_MODE_DEFAULT) {
 		callbacks->process_callback = ffmpeg_process_callback;
-		callbacks->process_callback_arg = data;
+		callbacks->process_callback_arg = &worker_data;
 	}
 
 	callbacks->custom_tick_callback = ffmpeg_tick_callback;
-	callbacks->custom_tick_callback_arg = data;
+	callbacks->custom_tick_callback_arg = &worker_data;
 
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
@@ -140,7 +230,11 @@ static int ffmpeg_fork_init_wrapper (
 	}
 
 	out:
-	return ret;
+		RRR_DBG_1("ffmpeg worker %s exiting\n", worker->name);
+		rva_stop(worker_data.threads, THREAD_COUNT, &worker_data.stop_now);
+		rva_close_input(&worker_data.ictx);
+		rva_close_shared(&worker_data.shctx);
+		return ret;
 }
 
 static int ffmpeg_fork (void *arg) {
