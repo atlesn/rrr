@@ -989,6 +989,24 @@ void rrr_cmodule_helper_loop_with_periodic (
 	__rrr_cmodule_helper_loop(thread_data, app_periodic_callback);
 }
 
+void rrr_cmodule_helper_config (
+		struct rrr_instance_runtime_data *thread_data,
+		enum rrr_cmodule_process_mode process_mode
+) {
+	struct rrr_cmodule_config_data *data = &(INSTANCE_D_CMODULE(thread_data)->config_data);
+
+	data->worker_spawn_interval = rrr_time_us_from_ms(rrr_cmodule_worker_default_spawn_interval);
+	data->config_worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
+	data->process_mode = process_mode;
+	data->do_spawning = 0;
+	data->do_drop_on_error = 0;
+
+	data->config_method = NULL;
+	data->process_method = NULL;
+	data->source_method = NULL;
+	data->log_prefix = NULL;
+}
+
 int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_runtime_data *thread_data,
 		const char *config_prefix,
