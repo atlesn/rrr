@@ -123,3 +123,19 @@ void rrr_time_from_usec (struct timeval *__restrict __tv, uint64_t usec) {
 
 	*__tv = result;
 }
+
+void rrr_time_utc (struct rrr_timespec *result) {
+	time_t now = time(NULL);
+	struct tm utc_time;
+	if (gmtime_r(&now, &utc_time) == NULL) {
+		RRR_BUG("Failed to get time in %s\n", __func__);
+	}
+	*result = (struct rrr_timespec){
+		.year = utc_time.tm_year + 1900,
+		.month = utc_time.tm_mon + 1,
+		.day = utc_time.tm_mday,
+		.hour = utc_time.tm_hour,
+		.minute = utc_time.tm_min,
+		.second = utc_time.tm_sec
+	};
+}

@@ -118,7 +118,9 @@ typedef struct RVAThreadContext {
 
 void rva_error(const char *format, ...);
 void rva_info(const char *format, ...);
+
 void rva_set_log_callback(void (*log_callback)(RVALogLevel level, const char *format, va_list args));
+void rva_set_filename_generator(void (*filename_generator)(char *dst, size_t size, const char *prefix, uint8_t index, const char *suffix));
 
 int rva_open_input(RVAInputContext *ictx, const char *url);
 void rva_close_input(RVAInputContext *ictx);

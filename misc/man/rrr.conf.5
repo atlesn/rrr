@@ -4208,12 +4208,27 @@ If not given, a dummy stream will be generated.
 .It ffmpeg_filter_scale=WIDTHxHEIGHT
 If given, the video stream is run through a scaling filter to produce the chosen dimensions.
 
-.It ffmpeg_output_directory=PATH
-Output directory for video files.
-The files will be named after the local time when created with the format YYYY-MM-DD HH:MM:SS.mp4.
-Any existing files will be overwritten.
+.It ffmpeg_filename_format={counter|timestamp}
+Specify a format template for filenames of generated files.
+.Bl -tag -width -indent
+.It counter
+The filenames will be in the format "out-nnnn.mp4" where nnnn is an integer incremented once for every file being rotated.
+.It date
+The filename will be in the format "out-YYYY-MM-DDZHH:MM:SS.mp4", representing the time and date in UTC for when the file was opened.
 
 .El
+If not given, the 'counter' format will be used.
+
+.It ffmpeg_output_directory=PATH
+Output directory for video files.
+Any existing files will be overwritten should their names collide.
+
+.It ffmpeg_duration_s=SECONDS
+If given and set to something greater than zero, the output file will be rotated the given amount of seconds so that now file will exceed this length.
+
+.If ffmpeg_rounds=UNSIGNED INTEGER
+If given and set to something greater than zero, the ffmpeg instance will exit after the given amount of files has been generated,
+effectively causing a program restart.
 
 .SH COMMON CONFIGURATION PARAMETERS
 Replace the

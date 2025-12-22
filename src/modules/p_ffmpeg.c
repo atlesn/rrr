@@ -52,7 +52,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_NATIVE_CTX
 #include "../cmodules/cmodule.h"
 
-static char ffmpeg_log_prefix[512] = {'f', 'f', 'm', 'p', 'e', 'g', '\0'};
+enum ffmpeg_filename_format_t {
+	FFMPEG_FILENAME_FORMAT_COUNTER,
+	FFMPEG_FILENAME_FORMAT_TIMESTAMP
+};
 
 struct ffmpeg_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -60,11 +63,13 @@ struct ffmpeg_data {
 	char *source;
 	char *filter_scale;
 	char *output_directory;
+	char *filename_format_str;
 
 	rrr_setting_uint duration_s;
 	rrr_setting_uint rounds;
 
 	enum rrr_cmodule_process_mode process_mode;
+	enum ffmpeg_filename_format_t filename_format;
 };
 
 enum ffmpeg_thread_index {
@@ -89,12 +94,19 @@ struct ffmpeg_worker_data {
 	RVAThreadContext threads[THREAD_COUNT];
 };
 
+static char ffmpeg_log_prefix[512] = {'f', 'f', 'm', 'p', 'e', 'g', '\0'};
+static enum ffmpeg_filename_format_t ffmpeg_filename_format = FFMPEG_FILENAME_FORMAT_COUNTER;
+static char ffmpeg_logbuf[1024];
+static size_t ffmpeg_logbuf_pos;
+static pthread_mutex_t ffmpeg_logbuf_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static void ffmpeg_data_cleanup(void *arg) {
 	struct ffmpeg_data *data = arg;
 
 	RRR_FREE_IF_NOT_NULL(data->source);
 	RRR_FREE_IF_NOT_NULL(data->filter_scale);
 	RRR_FREE_IF_NOT_NULL(data->output_directory);
+	RRR_FREE_IF_NOT_NULL(data->filename_format_str);
 }
 
 static int ffmpeg_data_init(struct ffmpeg_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -114,14 +126,33 @@ static int ffmpeg_parse_config (struct ffmpeg_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ffmpeg_output_directory", output_directory);
 
 	if (data->output_directory == NULL || *(data->output_directory) == '\0') {
-		RRR_MSG_0("ffmpeg_output_directory configuration parameter missing for ffmpeg instance %s\n", config->name_debug);
+		RRR_MSG_0("ffmpeg_output_directory configuration parameter missing for ffmpeg instance %s\n",
+			config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
-	// Undocumented parameter for testing, stop processing after the given amount of seconds
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ffmpeg_filename_format", filename_format_str);
+
+	if (data->filename_format_str != NULL && *(data->filename_format_str) != '\0') {
+		if (strcmp(data->filename_format_str, "counter") == 0) {
+			data->filename_format = FFMPEG_FILENAME_FORMAT_COUNTER;
+		}
+		else if (strcmp(data->filename_format_str, "timestamp") == 0) {
+			data->filename_format = FFMPEG_FILENAME_FORMAT_TIMESTAMP;
+		}
+		else {
+			RRR_MSG_0("Unknown value '%s' for ffmpeg_filename_format for ffmpeg instance %s\n",
+				data->filename_format_str, config->name_debug);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		data->filename_format = FFMPEG_FILENAME_FORMAT_COUNTER;
+	}
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ffmpeg_duration_s", duration_s, 0);
-	// Undocumented parameter for testing, process at most this amount of encoding rounds
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ffmpeg_rounds", rounds, 0);
 
 	out:
@@ -171,10 +202,46 @@ static void ffmpeg_log_av (
 	const char *prefix = rrr_config_global.log_prefix;
 	uint8_t level = level_map[avlevel];
 
+	if (level == RRR_DEBUGLEVEL_ERROR) {
+		rrr_log_vprintf(__FILE__, __LINE__, level, prefix, fmt, args);
+		return;
+	}
+
 	if (!(rrr_config_global.debuglevel & level))
 		return;
 
-	rrr_log_vprintf(__FILE__, __LINE__, level, prefix, fmt, args);
+	pthread_mutex_lock(&ffmpeg_logbuf_lock);
+
+	ffmpeg_logbuf_pos += vsnprintf(ffmpeg_logbuf + ffmpeg_logbuf_pos, sizeof(ffmpeg_logbuf) - ffmpeg_logbuf_pos, fmt, args);
+
+	if (ffmpeg_logbuf_pos >= sizeof(ffmpeg_logbuf)) {
+		sprintf(ffmpeg_logbuf + sizeof(ffmpeg_logbuf) - 2, "\n");
+		goto flush;
+	}
+
+	if (strchr(ffmpeg_logbuf, '\n') != NULL) {
+		goto flush;
+	}
+
+	pthread_mutex_unlock(&ffmpeg_logbuf_lock);
+
+	return;
+
+	flush:
+	ffmpeg_logbuf[sizeof(ffmpeg_logbuf) - 1] = '\0';
+	rrr_log_printf(__FILE__, __LINE__, level, prefix, "%s", ffmpeg_logbuf);
+	ffmpeg_logbuf_pos = 0;
+
+	pthread_mutex_unlock(&ffmpeg_logbuf_lock);
+}
+
+static void ffmpeg_log_av_f (
+		const char *fmt, ...
+) {
+	va_list args;
+	va_start(args, fmt);
+	ffmpeg_log_av(NULL, AV_LOG_INFO, fmt, args);
+	va_end(args);
 }
 
 static void ffmpeg_log_rva (
@@ -190,10 +257,27 @@ static void ffmpeg_log_rva (
 	const char *prefix = rrr_config_global.log_prefix;
 	uint8_t level = level_map[rvalevel];
 
-	if (!(rrr_config_global.debuglevel & level))
+	if (level != RRR_DEBUGLEVEL_ERROR && !(rrr_config_global.debuglevel & level))
 		return;
 
 	rrr_log_vprintf(__FILE__, __LINE__, level, prefix, fmt, args);
+}
+
+static void ffmpeg_filename_generator(char *dst, size_t size, const char *prefix, uint8_t index, const char *suffix) {
+	switch (ffmpeg_filename_format) {
+		case FFMPEG_FILENAME_FORMAT_COUNTER: {
+			snprintf(dst, size, "file:%s%04u%s", prefix, index, suffix);
+		} break;
+		case FFMPEG_FILENAME_FORMAT_TIMESTAMP: {
+			struct rrr_timespec utc;
+			rrr_time_utc(&utc);
+			snprintf(dst, size, "file:%s%04d-%02d-%02dZ%02d:%02d:%02d%s",
+				prefix, utc.year, utc.month, utc.day, utc.hour, utc.minute, utc.second, suffix);
+		} break;
+		default:
+			assert(0 && "Unknown format");
+	};
+	dst[size - 1] = '\0';
 }
 
 static int ffmpeg_fork_init_wrapper (
@@ -205,6 +289,7 @@ static int ffmpeg_fork_init_wrapper (
 
 	snprintf(ffmpeg_log_prefix, sizeof(ffmpeg_log_prefix), "%s", rrr_config_global.log_prefix);
 	ffmpeg_log_prefix[sizeof(ffmpeg_log_prefix) - 1] = '\0';
+	ffmpeg_filename_format = data->filename_format;
 
 	struct ffmpeg_worker_data worker_data = {
 		.ffmpeg_data = data,
@@ -229,6 +314,7 @@ static int ffmpeg_fork_init_wrapper (
 
 	av_log_set_callback(ffmpeg_log_av);
 	rva_set_log_callback(ffmpeg_log_rva);
+	rva_set_filename_generator(ffmpeg_filename_generator);
 
 	AVRational time_base = {1, 25};
 

@@ -33,6 +33,7 @@
 #include <sys/time.h>
 
 static void (*rva_log_callback)(RVALogLevel level, const char *format, va_list args);
+static void (*rva_filename_generator)(char *dst, size_t size, const char *prefix, uint8_t index, const char *suffix);
 
 #define BUF_WRITE_BEGIN(buf, type) do {         \
 	type *entry = buf->entries[buf->wpos];
@@ -155,6 +156,10 @@ void rva_info(const char *format, ...) {
 
 void rva_set_log_callback(void (*log_callback)(RVALogLevel level, const char *format, va_list args)) {
 	rva_log_callback = log_callback;
+}
+
+void rva_set_filename_generator(void (*filename_generator)(char *dst, size_t size, const char *prefix, uint8_t index, const char *suffix)) {
+	rva_filename_generator = filename_generator;
 }
 
 static void rva_update_heartbeat(RVAHeartbeat *hb) {
@@ -546,7 +551,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 	int64_t packet_count = 0;
 	RVAEncoderState state = 0;
 	uint8_t filename_index = 0;
-	char filename_indexed[PATH_MAX];
+	char filename[PATH_MAX];
 	double elapsed_s = 0.0f;
 	int64_t pts_offset = 0;
 	int rounds = ctx->rounds;
@@ -587,27 +592,36 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 			);
 
 			if (!octx.oc) {
-				sprintf(filename_indexed, "%s%04u%s", ctx->filename_prefix, filename_index, ctx->filename_suffix);
-				rva_info("Using output file %s\n", filename_indexed);
+				if (rva_filename_generator)
+					rva_filename_generator(filename, sizeof(filename), ctx->filename_prefix, filename_index, ctx->filename_suffix);
+				else
+					sprintf(filename, "%s%04u%s", ctx->filename_prefix, filename_index, ctx->filename_suffix);
+
+				rva_info("Using output file %s\n", filename);
+
 				filename_index++;
-				err = rva_open_encoder(&octx, filename_indexed, ctx->time_base, frame->format, frame->width, frame->height);
+
+				err = rva_open_encoder(&octx, filename, ctx->time_base, frame->format, frame->width, frame->height);
 				if (err)
 					goto fail;
 			}
 
 			if (!(state & ENCODER_STATE_RUN)) {
-				err = unlink(filename_indexed);
+				err = unlink(filename);
 				if (!err || (err && errno == ENOENT)) {
 					// OK
 				}
 				else {
-					rva_error("Failed to unlink %s: %s\n", filename_indexed, rrr_strerror(errno));
+					rva_error("Failed to unlink %s: %s\n", filename, rrr_strerror(errno));
 					goto fail;
 				}
 
-				err = avio_open(&octx.oc->pb, filename_indexed, AVIO_FLAG_WRITE);
+	char cwd[PATH_MAX] = {0};
+	getcwd(cwd, sizeof(cwd));
+	rva_info("CWD: %s\n", cwd);
+				err = avio_open(&octx.oc->pb, filename, AVIO_FLAG_WRITE);
 				if (err) {
-					rva_error("Failed to open output file '%s': %s\n", filename_indexed, av_err2str(err));
+					rva_error("Failed to open output file '%s': %s\n", filename, av_err2str(err));
 					goto fail;
 				}
 
