@@ -532,13 +532,32 @@ static int rva_open_encoder(
 		return ret;
 }
 
-void rva_close_encoder(RVAEncoderPrivateContext *octx) {
+void rva_close_encoder(int *did_close, RVAEncoderPrivateContext *octx) {
+	*did_close = 0;
 	if (octx->oc) {
+		*did_close = 1;
 		avio_closep(&octx->oc->pb);
 		avformat_free_context(octx->oc);
 	}
 	avcodec_free_context(&octx->avctx);
 	memset(octx, '\0', sizeof(*octx));
+}
+
+static int rva_encoder_report(RVAEncoderContext *ectx, const char *filename) {
+	int err, ret = 0;
+
+	if (!ectx->report_callback)
+		goto out;
+
+	err = ectx->report_callback(filename, ectx->report_callback_arg);
+	if (err)
+		goto fail;
+
+	goto out;
+	fail:
+		ret = 1;
+	out:
+		return ret;
 }
 
 static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
@@ -555,6 +574,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 	double elapsed_s = 0.0f;
 	int64_t pts_offset = 0;
 	int rounds = ctx->rounds;
+	int did_close = 0;
 
 	frame = av_frame_alloc();
 	if (!frame) {
@@ -711,7 +731,10 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 			rva_info("Specified number of rounds reached, not starting new encoding round.\n");
 		}
 		else {
-			rva_close_encoder(&octx);
+			assert (state & ENCODER_STATE_RUN && "State was not RUN");
+			rva_close_encoder(&did_close, &octx);
+			if (did_close)
+				rva_encoder_report(ctx, filename);
 			state &= ~(ENCODER_STATE_FLUSH|ENCODER_STATE_RUN);
 			goto encode;
 		}
@@ -722,7 +745,9 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 		ret = 1;
 	out:
 		rva_info("Encoder thread exiting\n");
-		rva_close_encoder(&octx);
+		rva_close_encoder(&did_close, &octx);
+		if (did_close)
+			rva_encoder_report(ctx, filename);
 		av_frame_free(&frame);
 		av_packet_free(&packet);
 		return ret;

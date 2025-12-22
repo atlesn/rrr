@@ -36,6 +36,8 @@ typedef enum RVALogLevel {
 	RVA_LOG_LEVEL_INFO
 } RVALogLevel;
 
+typedef int (*RVAReportCallback)(const char *filename, void *arg);
+
 #define BUFSIZE 16
 
 #define BUFMEMBERS(type)          \
@@ -74,6 +76,8 @@ typedef struct RVAEncoderContext {
 	AVRational time_base;
 	int duration;
 	int rounds;
+	RVAReportCallback report_callback;
+	void *report_callback_arg;
 } RVAEncoderContext;
 
 typedef struct RVADecoderContext {

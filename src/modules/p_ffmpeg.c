@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/messages/msg_msg.h"
+#include "../lib/messages/msg_addr.h"
 #include "../lib/ip/ip.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
@@ -47,7 +48,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
+#include "../lib/util/posix.h"
 #include "../lib/rvalib.h"
+#include "../lib/array.h"
 
 #define RRR_CMODULE_NATIVE_CTX
 #include "../cmodules/cmodule.h"
@@ -67,6 +70,7 @@ struct ffmpeg_data {
 
 	rrr_setting_uint duration_s;
 	rrr_setting_uint rounds;
+	int report_messages;
 
 	enum rrr_cmodule_process_mode process_mode;
 	enum ffmpeg_filename_format_t filename_format;
@@ -154,6 +158,7 @@ static int ffmpeg_parse_config (struct ffmpeg_data *data, struct rrr_instance_co
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ffmpeg_duration_s", duration_s, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ffmpeg_rounds", rounds, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ffmpeg_report_messages", report_messages, 0);
 
 	out:
 	return ret;
@@ -263,6 +268,52 @@ static void ffmpeg_log_rva (
 	rrr_log_vprintf(__FILE__, __LINE__, level, prefix, fmt, args);
 }
 
+static int ffmpeg_report_callback(const char *filename, void *arg) {
+	int ret = 0;
+
+	struct ffmpeg_worker_data *worker_data = arg;
+
+	struct rrr_msg_addr msg_addr;
+	struct rrr_msg_msg *msg = NULL;
+	struct rrr_array array = {0};
+
+	if (strncmp(filename, "file:", 5) == 0) {
+		filename += 5;
+	}
+
+	RRR_DBG_1("File completion report for '%s' in worker %s of ffmpeg instance %s\n",
+		filename, worker_data->worker->name, INSTANCE_D_NAME(worker_data->ffmpeg_data->thread_data));
+
+	if (!worker_data->ffmpeg_data->report_messages)
+		goto out;
+
+	if (rrr_array_push_value_str_with_tag(&array, "ffmpeg_filename", filename) != 0) {
+		RRR_MSG_0("Failed to push filename to array in %s\n", __func__);
+		goto fail;
+	}
+
+	if (rrr_array_new_message_from_array(&msg, &array, rrr_time_get_64(), NULL, 0) != 0) {
+		RRR_MSG_0("Failed to create message in %s\n", __func__);
+		goto fail;
+	}
+
+	rrr_msg_addr_init(&msg_addr);
+
+	if (rrr_cmodule_worker_send_message_and_address_to_parent(worker_data->worker, msg, &msg_addr) != 0) {
+		RRR_MSG_0("Failed to send report message to parent in worker %s of ffmpeg instance %s\n",
+			worker_data->worker->name, INSTANCE_D_NAME(worker_data->ffmpeg_data->thread_data));
+		goto fail;
+	}
+
+	goto out;
+	fail:
+		ret = 1;
+	out:
+		RRR_FREE_IF_NOT_NULL(msg);
+		rrr_array_clear(&array);
+		return ret;
+}
+
 static void ffmpeg_filename_generator(char *dst, size_t size, const char *prefix, uint8_t index, const char *suffix) {
 	switch (ffmpeg_filename_format) {
 		case FFMPEG_FILENAME_FORMAT_COUNTER: {
@@ -342,6 +393,9 @@ static int ffmpeg_fork_init_wrapper (
 			rrr_int_from_biglength_bug_const(worker_data.ffmpeg_data->duration_s),
 			rrr_int_from_biglength_bug_const(worker_data.ffmpeg_data->rounds)
 	);
+
+	worker_data.ectx.report_callback = ffmpeg_report_callback;
+	worker_data.ectx.report_callback_arg = &worker_data;
 
 	if (rva_start(worker_data.threads, THREAD_COUNT) != 0) {
 		RRR_MSG_0("Failed to start RVA threads in worker %s fork of ffmpeg instance %s\n",
