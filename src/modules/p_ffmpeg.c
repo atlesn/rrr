@@ -52,6 +52,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_NATIVE_CTX
 #include "../cmodules/cmodule.h"
 
+static char ffmpeg_log_prefix[512] = {'f', 'f', 'm', 'p', 'e', 'g', '\0'};
+
 struct ffmpeg_data {
 	struct rrr_instance_runtime_data *thread_data;
 
@@ -151,12 +153,58 @@ static int ffmpeg_tick_callback (RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS) {
 	return 0;
 }
 
+static void ffmpeg_log_av (
+		void *avcl, int avlevel, const char *fmt, va_list args
+) {
+	static const uint8_t level_map[] = {
+		[AV_LOG_ERROR] = RRR_DEBUGLEVEL_ERROR,
+		[AV_LOG_WARNING] = RRR_DEBUGLEVEL_ERROR,
+		[AV_LOG_INFO] = RRR_DEBUGLEVEL_INFO,
+		[AV_LOG_DEBUG] = RRR_DEBUGLEVEL_DEBUG
+	};
+
+	assert(avlevel >= 0 && (size_t) avlevel <= sizeof(level_map)/sizeof(*level_map) && "AV log level out of range");
+
+	// XXX [atle 2025-12-22]: This looks messy by showing ffmpeg internals, simply print config name.
+	// AVClass *avc = avcl ? *(AVClass **) avcl : NULL;
+	// const char *prefix = avc ? avc->item_name(avcl) : "ffmpeg";
+	const char *prefix = rrr_config_global.log_prefix;
+	uint8_t level = level_map[avlevel];
+
+	if (!(rrr_config_global.debuglevel & level))
+		return;
+
+	rrr_log_vprintf(__FILE__, __LINE__, level, prefix, fmt, args);
+}
+
+static void ffmpeg_log_rva (
+		RVALogLevel rvalevel, const char *fmt, va_list args
+) {
+	static const uint8_t level_map[] = {
+		[RVA_LOG_LEVEL_ERROR] = RRR_DEBUGLEVEL_ERROR,
+		[RVA_LOG_LEVEL_INFO] = RRR_DEBUGLEVEL_INFO
+	};
+
+	assert(rvalevel >= 0 && (size_t) rvalevel <= sizeof(level_map)/sizeof(*level_map) && "RVA log level out of range");
+
+	const char *prefix = rrr_config_global.log_prefix;
+	uint8_t level = level_map[rvalevel];
+
+	if (!(rrr_config_global.debuglevel & level))
+		return;
+
+	rrr_log_vprintf(__FILE__, __LINE__, level, prefix, fmt, args);
+}
+
 static int ffmpeg_fork_init_wrapper (
 		RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 ) {
 	struct ffmpeg_data *data = private_arg;
 
 	int ret = 0;
+
+	snprintf(ffmpeg_log_prefix, sizeof(ffmpeg_log_prefix), "%s", rrr_config_global.log_prefix);
+	ffmpeg_log_prefix[sizeof(ffmpeg_log_prefix) - 1] = '\0';
 
 	struct ffmpeg_worker_data worker_data = {
 		.ffmpeg_data = data,
@@ -178,6 +226,9 @@ static int ffmpeg_fork_init_wrapper (
 		ret = 1;
 		goto out;
 	}
+
+	av_log_set_callback(ffmpeg_log_av);
+	rva_set_log_callback(ffmpeg_log_rva);
 
 	AVRational time_base = {1, 25};
 

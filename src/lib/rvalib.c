@@ -32,6 +32,8 @@
 #include <unistd.h>
 #include <sys/time.h>
 
+static void (*rva_log_callback)(RVALogLevel level, const char *format, va_list args);
+
 #define BUF_WRITE_BEGIN(buf, type) do {         \
 	type *entry = buf->entries[buf->wpos];
 
@@ -58,7 +60,7 @@
 		rva_error("Failed to initialize mutex");\
 		abort();                              \
 	}                                             \
-	for (int i = 0; i < BUFSIZE; i++) {           \
+for (int i = 0; i < BUFSIZE; i++) {           \
 	  buf.entries[i] = alloc();                   \
 	    if (!buf.entries[i]) {                    \
 	      rva_error("Failed to allocate entry\n");\
@@ -131,7 +133,10 @@ void rva_error(const char *format, ...) {
 	va_list(args); 
 	va_start(args, format);
 
-	vfprintf(stderr, format, args);
+	if (rva_log_callback)
+		rva_log_callback(RVA_LOG_LEVEL_ERROR, format, args);
+	else
+		vfprintf(stderr, format, args);
 
 	va_end(args);
 }
@@ -140,9 +145,16 @@ void rva_info(const char *format, ...) {
 	va_list(args); 
 	va_start(args, format);
 
-	vfprintf(stderr, format, args);
+	if (rva_log_callback)
+		rva_log_callback(RVA_LOG_LEVEL_INFO, format, args);
+	else
+		vfprintf(stderr, format, args);
 
 	va_end(args);
+}
+
+void rva_set_log_callback(void (*log_callback)(RVALogLevel level, const char *format, va_list args)) {
+	rva_log_callback = log_callback;
 }
 
 static void rva_update_heartbeat(RVAHeartbeat *hb) {

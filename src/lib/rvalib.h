@@ -31,6 +31,11 @@
 #include <libavfilter/buffersrc.h>
 #include <libavutil/rational.h>
 
+typedef enum RVALogLevel {
+	RVA_LOG_LEVEL_ERROR,
+	RVA_LOG_LEVEL_INFO
+} RVALogLevel;
+
 #define BUFSIZE 16
 
 #define BUFMEMBERS(type)          \
@@ -113,6 +118,7 @@ typedef struct RVAThreadContext {
 
 void rva_error(const char *format, ...);
 void rva_info(const char *format, ...);
+void rva_set_log_callback(void (*log_callback)(RVALogLevel level, const char *format, va_list args));
 
 int rva_open_input(RVAInputContext *ictx, const char *url);
 void rva_close_input(RVAInputContext *ictx);
