@@ -125,6 +125,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,                            'E',    "event-hooks",           "[-E|--event-hooks]"},
 		{0,                            'M',    "message-hooks",         "[-M|--message-hooks]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
+		{0,                            'j',    "json",                  "[-j|--json]"},
 		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'L',    "log-socket",            "[-L|--log-socket[=]LOG SOCKET]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'o',    "output-buffer-warn-limit", "[-o|--output-buffer-warn-limit[=]LIMIT]"},

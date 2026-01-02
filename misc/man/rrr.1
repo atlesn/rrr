@@ -1,4 +1,4 @@
-.Dd 2024-10-13
+.Dd 2026-01-02
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -13,6 +13,7 @@ for collecting, buffering, processing and storing messages and measurements.
 .Dl [-E|--event-hooks]
 .Dl [-M|--message-hooks]
 .Dl [-r|--run-directory[=]RUN DIRECTORY]
+.Dl [-j|--json]
 .Dl [-l|--loglevel-translation]
 .Dl [-L|--log-socket[=]LOG SOCKET]
 .Dl [-o|--output-buffer-warn-limit[=]LIMIT]
@@ -135,6 +136,10 @@ is not used.
 Print RRR banner before starting.
 .IP -r|--run-directory[=]RUN DIRECTORY
 Specify an alternative default prefix for runtime sockets.
+.IP -j|--json
+If given, logging will be printed in JSON format. Refer to
+.Xr rrr_logd(1)
+for details.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).

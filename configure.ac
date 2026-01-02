@@ -1379,7 +1379,7 @@ LIBS=""
 
 AC_MSG_CHECKING([json-c bindings])
 AS_IF([test "x$enable_jsonc" = xno], [
-	AC_MSG_RESULT([Not compiling with json-c bindings])
+	AC_MSG_ERROR([Compiling with json-c bindings is required])
 ], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_WITH_JSONC], [1], [Compile with json-c bindings])

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021-2025 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2026 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -554,6 +554,15 @@ void rrr_json_from_object_nolog (
 		struct rrr_json_object *object
 ) {
 	const char *json = json_object_to_json_string(object->object);
+	if ((*target = rrr_strdup(json)) == NULL)
+		RRR_ABORT("Failed to allocate memory in %s\n", __func__);
+}
+
+void rrr_json_from_object_nolog_pretty (
+		char **target,
+		struct rrr_json_object *object
+) {
+	const char *json = json_object_to_json_string_ext(object->object, JSON_C_TO_STRING_PRETTY);
 	if ((*target = rrr_strdup(json)) == NULL)
 		RRR_ABORT("Failed to allocate memory in %s\n", __func__);
 }
