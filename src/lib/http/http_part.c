@@ -645,7 +645,6 @@ static int __rrr_http_part_fields_from_post_extract (
 			field_tmp = NULL;
 		RRR_LL_ITERATE_END();
 	}
-#ifdef RRR_WITH_JSONC
 	else if (__rrr_http_part_content_type_equals(target, "application/json")) {
 		RRR_HTTP_PART_DECLARE_DATA_START_AND_END(target, data_ptr);
 
@@ -673,7 +672,6 @@ static int __rrr_http_part_fields_from_post_extract (
 			goto out;
 		}
 	}
-#endif
 
 	out:
 	if (field_tmp != NULL) {
@@ -805,7 +803,6 @@ int rrr_http_part_post_x_www_form_body_make (
 	return ret;
 }
 
-#ifdef RRR_WITH_JSONC
 int rrr_http_part_json_make (
 		struct rrr_http_part *part,
 		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
@@ -833,7 +830,6 @@ int rrr_http_part_json_make (
 	pthread_cleanup_pop(1);
 	return ret;
 }
-#endif
 
 static void __rrr_http_part_header_field_dump (
 		struct rrr_http_header_field *field

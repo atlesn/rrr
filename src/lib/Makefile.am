@@ -78,14 +78,12 @@ librrrquic_la_LDFLAGS = ${GNUTLS_LIBS}
 quic_extra_ld = ${GNUTLS_LIBS} ${NGTCP2_LDFLAGS}
 endif
 
-if RRR_WITH_JSONC
 libadd_jsonc = librrrjsonc.la
 librrrjsonc_la_SOURCES = json/json.c
 librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS} ${AM_CFLAGS}
 librrrjsonc_la_LDFLAGS = ${JSONC_LDFLAGS}
 librrrjsonc_la_LIBS = ${JSONC_LIBS}
 jsonc_extra_ld = ${JSONC_LDFLAGS} ${JSONC_LIBS}
-endif
 
 if RRR_WITH_ZLIB
 libadd_zlib = librrrzlib.la
