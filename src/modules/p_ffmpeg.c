@@ -268,7 +268,7 @@ static void ffmpeg_log_rva (
 	rrr_log_vprintf(__FILE__, __LINE__, level, prefix, fmt, args);
 }
 
-static int ffmpeg_report_callback(const char *filename, void *arg) {
+static int ffmpeg_report_callback(const char *filename, int64_t packet_count, void *arg) {
 	int ret = 0;
 
 	struct ffmpeg_worker_data *worker_data = arg;
@@ -281,8 +281,8 @@ static int ffmpeg_report_callback(const char *filename, void *arg) {
 		filename += 5;
 	}
 
-	RRR_DBG_1("File completion report for '%s' in worker %s of ffmpeg instance %s\n",
-		filename, worker_data->worker->name, INSTANCE_D_NAME(worker_data->ffmpeg_data->thread_data));
+	RRR_DBG_1("File completion report for '%s' with %" PRIi64 " packets in worker %s of ffmpeg instance %s\n",
+		filename, packet_count, worker_data->worker->name, INSTANCE_D_NAME(worker_data->ffmpeg_data->thread_data));
 
 	if (!worker_data->ffmpeg_data->report_messages)
 		goto out;
@@ -322,7 +322,7 @@ static void ffmpeg_filename_generator(char *dst, size_t size, const char *prefix
 		case FFMPEG_FILENAME_FORMAT_TIMESTAMP: {
 			struct rrr_timespec utc;
 			rrr_time_utc(&utc);
-			snprintf(dst, size, "file:%s%04d-%02d-%02dZ%02d:%02d:%02d%s",
+			snprintf(dst, size, "file:%s%04d%02d%02dT%02d%02d%02dZ%s",
 				prefix, utc.year, utc.month, utc.day, utc.hour, utc.minute, utc.second, suffix);
 		} break;
 		default:

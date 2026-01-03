@@ -543,13 +543,27 @@ void rva_close_encoder(int *did_close, RVAEncoderPrivateContext *octx) {
 	memset(octx, '\0', sizeof(*octx));
 }
 
-static int rva_encoder_report(RVAEncoderContext *ectx, const char *filename) {
-	int err, ret = 0;
+static int rva_encoder_close_and_report (
+		RVAEncoderPrivateContext *octx,
+		RVAEncoderContext *ectx,
+		const char *filename,
+		int64_t packet_count
+) {
+	int err, did_close, ret = 0;
+
+	rva_close_encoder(&did_close, octx);
+	if (!did_close)
+		goto out;
+
+	if (packet_count == 0) {
+		unlink(filename);
+		goto out;
+	}
 
 	if (!ectx->report_callback)
 		goto out;
 
-	err = ectx->report_callback(filename, ectx->report_callback_arg);
+	err = ectx->report_callback(filename, packet_count, ectx->report_callback_arg);
 	if (err)
 		goto fail;
 
@@ -568,13 +582,13 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 	AVFrame *frame = NULL;
 	AVPacket *packet = NULL;
 	int64_t packet_count = 0;
+	int64_t packet_count_file = 0;
 	RVAEncoderState state = 0;
 	uint8_t filename_index = 0;
 	char filename[PATH_MAX];
 	double elapsed_s = 0.0f;
 	int64_t pts_offset = 0;
 	int rounds = ctx->rounds;
-	int did_close = 0;
 
 	frame = av_frame_alloc();
 	if (!frame) {
@@ -589,6 +603,8 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 	}
 
 	encode:
+
+	packet_count_file = 0;
 
 	for (;;) {
 		if (*ctx->flush_now) {
@@ -699,6 +715,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 			}
 
 			packet_count++;
+			packet_count_file++;
 
 			av_packet_unref(packet);
 		}
@@ -712,13 +729,14 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 
 	state |= ENCODER_STATE_FLUSH;
 
-	rva_info("Finalizing output after %" PRIi64 " packets\n", packet_count);
+	rva_info("Finalizing output after %" PRIi64 "/%" PRIi64 " packets\n", packet_count_file, packet_count);
 
 	goto encode;
 
 	write_trailer:
 
-	rva_info("Packet count after finalizing is %" PRIi64 " packets and elapsed time is %0.2lf" "s\n", packet_count, elapsed_s);
+	rva_info("Packet count after finalizing is %" PRIi64 "/%" PRIi64 " and elapsed time is %0.2lf" "s\n",
+		packet_count_file, packet_count, elapsed_s);
 
 	err = av_write_trailer(octx.oc);
 	if (err) {
@@ -732,9 +750,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 		}
 		else {
 			assert (state & ENCODER_STATE_RUN && "State was not RUN");
-			rva_close_encoder(&did_close, &octx);
-			if (did_close)
-				rva_encoder_report(ctx, filename);
+			rva_encoder_close_and_report(&octx, ctx, filename, packet_count_file);
 			state &= ~(ENCODER_STATE_FLUSH|ENCODER_STATE_RUN);
 			goto encode;
 		}
@@ -745,9 +761,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 		ret = 1;
 	out:
 		rva_info("Encoder thread exiting\n");
-		rva_close_encoder(&did_close, &octx);
-		if (did_close)
-			rva_encoder_report(ctx, filename);
+		rva_encoder_close_and_report(&octx, ctx, filename, packet_count_file);
 		av_frame_free(&frame);
 		av_packet_free(&packet);
 		return ret;

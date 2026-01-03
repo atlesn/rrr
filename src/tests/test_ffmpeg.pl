@@ -28,7 +28,7 @@ sub process {
 	chdir("/tmp") or die "Could not change directory to /tmp: %!\n";
 
 	die "Filename missing\n" unless defined $filename;
-	die "Filename format error\n" unless $filename =~ /^out-\d\d\d\d-\d\d-\d\dZ\d\d:\d\d:\d\d\.mp4$/;
+	die "Filename format error\n" unless $filename =~ /^out-\d\d\d\d\d\d\d\dT\d\d\d\d\d\dZ\.mp4$/;
 
 	$dbg->msg(1,  "Received report for file $filename topic was '$message->{'topic'}'\n");
 
