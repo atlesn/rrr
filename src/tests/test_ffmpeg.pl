@@ -45,7 +45,7 @@ sub process {
 	$state++;
 
 	if ($state == 2) {
-		$dbg->msg(1, "All messages received, sending notification message\b");
+		$dbg->msg(1, "All messages received, sending notification message\n");
 		$message->{'topic'} = "success";
 		$message->clear_array();
 		$message->send();

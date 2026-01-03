@@ -517,6 +517,9 @@ Traps log messages from all modules and saves them into RRR messages.
 .It file (PA)
 Reads from files, sockets, character devices and FIFO pipes.
 
+.It directory (SA)
+Indexes directories.
+
 .It mysql (DAI)
 Saves records to a MySQL or MariaDB table.
 
@@ -3913,6 +3916,47 @@ for a list of valid modes.
 For write to be possible, proper permissions must be given (read + write permissions for the user should always be set).
 
 .El
+.SS directory(SA)
+This module will index a directory on a given interval producing array messages containing all found filenames.
+.PP
+Any sub-directories are ignored.
+.PP
+Messages produced will have the following array fields present:
+.Bl -tag -width -indent
+.It file_directory
+.It file_name
+The original path of the file before any symbolic link resolving.
+.Pp
+.It file_path_resolved
+The resolved path (in case original is a symbolic link) of the file respectively.
+.El
+There will be one
+.B file_name
+and one
+.B file_path_resolved
+for every file found present in the array.
+The first file will be described by the first entry for each value and so on.
+.PP
+There will only be one
+.B file_directory
+value which is common for all files.
+.PP
+The following configuration parameters are available for the
+.B directory
+module:
+.PP
+.Bl -tag -width -indent
+.It directory_directory=DIRECTORY
+The directory in which to search for files.
+
+.It directory_probe_interval_s=SECONDS
+How often to probe for files. If not given, probing will occur every 5 seconds.
+
+.It directory_prefix=FILE PREFIX
+Ignore any files not having the given prefix. If left unset, no files are ignored.
+
+.El
+
 .SS mysql (DAI)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
 database.

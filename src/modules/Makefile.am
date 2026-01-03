@@ -61,7 +61,7 @@ ffmpeg_la_LDFLAGS = ${module_ldflags} ${FFMPEG_LIBS}
 endif
 
 lib_LTLIBRARIES = dummy.la raw.la \
-	ipclient.la ip.la averager.la file.la exploder.la mangler.la \
+	ipclient.la ip.la averager.la file.la directory.la exploder.la mangler.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	msgdb.la incrementer.la cacher.la modbus.la \
@@ -126,6 +126,9 @@ httpserver_la_SOURCES = p_httpserver.c
 
 file_la_LDFLAGS = ${module_ldflags}
 file_la_SOURCES = p_file.c
+
+directory_la_LDFLAGS = ${module_ldflags}
+directory_la_SOURCES = src_directory.c
 
 modbus_la_LDFLAGS = ${module_ldflags}
 modbus_la_SOURCES = p_modbus.c

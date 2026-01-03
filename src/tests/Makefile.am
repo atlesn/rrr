@@ -112,6 +112,7 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_dummy.sh            \
 	test_fifo.sh             \
 	test_file.sh             \
+	test_directory.sh        \
 	test_http.sh             \
 	test_sub_instance.sh     \
 	test_http2.sh            \
