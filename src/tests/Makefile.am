@@ -5,10 +5,6 @@ test_tls = test_tls.c
 test_tls_common = test_tls_common.c
 endif
 
-if RRR_WITH_JSONC
-test_jsonc = test_json.c
-endif
-
 if RRR_WITH_ZLIB
 test_zlib = test_zlib.c
 endif
@@ -51,7 +47,7 @@ test_SOURCES = test.c \
 	test_condition.c \
 	${test_tls} \
 	${test_tls_common} \
-	${test_jsonc} \
+	test_json.c \
 	${test_zlib} \
 	${test_artnet} \
 	${test_ffmpeg} \

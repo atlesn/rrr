@@ -63,7 +63,6 @@ esac
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--without-libressl], [Force disable LibreSSL support])], [enable_libressl=no], [enable_libressl=yes])
 AC_ARG_WITH([openssl], [AS_HELP_STRING([--without-openssl], [Force disable OpenSSL support])], [enable_openssl=no], [enable_openssl=yes])
-AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c bindings])],[enable_jsonc=no],[enable_jsonc=yes])
 AC_ARG_WITH([zlib],[AS_HELP_STRING([--without-zlib],[build without the zlib bindings])],[enable_zlib=no],[enable_zlib=yes])
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
 AC_ARG_WITH([http3],[AS_HELP_STRING([--without-http3],[build without the NGHTTP3 and NGTCP2 bindings])],[enable_http3=no],[enable_http3=yes])
@@ -201,7 +200,6 @@ AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_ARTNET], [test "x$enable_artnet" != xno])
 AM_CONDITIONAL([RRR_WITH_FFMPEG], [test "x$enable_ffmpeg" != xno])
 AM_CONDITIONAL([RRR_WITH_LUA], [test "x$enable_lua" != xno])
-AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
 AM_CONDITIONAL([RRR_WITH_ZLIB], [test "x$enable_zlib" != xno])
 AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
@@ -1405,49 +1403,42 @@ AS_IF([test "x$enable_ffmpeg" = xno], [
 # Make sure json-c-test does not include any libraries
 LIBS=""
 
-AC_MSG_CHECKING([json-c bindings])
-AS_IF([test "x$enable_jsonc" = xno], [
-	AC_MSG_RESULT([Not compiling with json-c bindings])
+AC_CHECK_HEADERS([json-c/json_tokener.h json-c/json_object.h json-c/json_object_iterator.h json-c/json_util.h])
+AC_CHECK_LIB(json-c, json_tokener_new, [], AC_MSG_ERROR([json_tokener_new from json-c not found]))
+
+AC_CHECK_LIB(json-c, json_object_new_null, [
+	AC_DEFINE([RRR_HAVE_JSONC_NEW_NULL], [1], [We have json-c json_object_new_null])
+], [])
+
+AC_CHECK_LIB(json-c, json_object_new_uint64, [
+	AC_DEFINE([RRR_HAVE_JSONC_NEW_UINT64], [1], [We have json-c json_object_new_uint64])
+], [])
+
+AC_MSG_CHECKING([json_object_object_add is of void type])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#include <json-c/json_object.h>
+		int main (int argc, char *argv[]) {
+			json_object *obj1 = json_object_new_object();
+			json_object *obj2 = json_object_new_object();
+			// Compilation fails if function is of void type
+			return json_object_object_add(obj1, "key", obj2);
+		}
+	]])
+], [
+	AC_MSG_RESULT([no])
 ], [
 	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_WITH_JSONC], [1], [Compile with json-c bindings])
-	AC_CHECK_HEADERS([json-c/json_tokener.h json-c/json_object.h json-c/json_object_iterator.h json-c/json_util.h])
-	AC_CHECK_LIB(json-c, json_tokener_new, [], AC_MSG_ERROR([json_tokener_new from json-c not found]))
-
-	AC_CHECK_LIB(json-c, json_object_new_null, [
-		AC_DEFINE([RRR_HAVE_JSONC_NEW_NULL], [1], [We have json-c json_object_new_null])
-	], [])
-
-	AC_CHECK_LIB(json-c, json_object_new_uint64, [
-		AC_DEFINE([RRR_HAVE_JSONC_NEW_UINT64], [1], [We have json-c json_object_new_uint64])
-	], [])
-
-	AC_MSG_CHECKING([json_object_object_add is of void type])
-	AC_RUN_IFELSE([
-		AC_LANG_SOURCE([[
-			#include <json-c/json_object.h>
-			int main (int argc, char *argv[]) {
-				json_object *obj1 = json_object_new_object();
-				json_object *obj2 = json_object_new_object();
-				// Compilation fails if function is of void type
-				return json_object_object_add(obj1, "key", obj2);
-			}
-		]])
-	], [
-		AC_MSG_RESULT([no])
-	], [
-		AC_MSG_RESULT([yes])
-		AC_DEFINE([RRR_HAVE_JSONC_OBJECT_ADD_VOID], [1], [json_object_object_add is of void type])
-	])
-
-	JSONC_CFLAGS=""
-	JSONC_LDFLAGS=""
-	JSONC_LIBS="-ljson-c"
-
-	AC_SUBST([JSONC_CFLAGS])
-	AC_SUBST([JSONC_LDFLAGS])
-	AC_SUBST([JSONC_LIBS])
+	AC_DEFINE([RRR_HAVE_JSONC_OBJECT_ADD_VOID], [1], [json_object_object_add is of void type])
 ])
+
+JSONC_CFLAGS=""
+JSONC_LDFLAGS=""
+JSONC_LIBS="-ljson-c"
+
+AC_SUBST([JSONC_CFLAGS])
+AC_SUBST([JSONC_LDFLAGS])
+AC_SUBST([JSONC_LIBS])
 
 AC_MSG_CHECKING([zlib bindings])
 AS_IF([test "x$enable_zlib" = xno], [

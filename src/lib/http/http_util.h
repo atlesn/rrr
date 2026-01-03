@@ -188,14 +188,12 @@ enum rrr_http_body_format rrr_http_util_format_str_to_enum (
 const char *rrr_http_util_iana_response_phrase_from_status_code (
 		unsigned int status_code
 );
-#ifdef RRR_WITH_JSONC
 int rrr_http_util_json_to_arrays (
 		const char *data,
 		rrr_length data_size,
 		int (*callback)(const struct rrr_array *array, void *arg),
 		void *callback_arg
 );
-#endif
 #ifdef RRR_HTTP_UTIL_WITH_ENCODING
 int rrr_http_util_encode (
 		struct rrr_nullsafe_str *output,

@@ -54,9 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_TLS
 #	include "test_tls.h"
 #endif
-#ifdef RRR_WITH_JSONC
-#	include "test_json.h"
-#endif
+#include "test_json.h"
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
@@ -217,13 +215,11 @@ int rrr_test_library_functions (
 	ret |= ret_tmp;
 #endif
 
-#ifdef RRR_WITH_JSONC
 	TEST_BEGIN("JSON parsing") {
 		ret_tmp = rrr_test_json();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-#endif
 
 #ifdef RRR_WITH_ZLIB
 	TEST_BEGIN("zlib compression and decompression") {

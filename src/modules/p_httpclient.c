@@ -127,9 +127,8 @@ struct httpclient_data {
 	int do_rrr_msg_to_array;
 	int do_drop_on_error;
 	int do_receive_part_data;
-#ifdef RRR_WITH_JSONC
 	int do_receive_json_data;
-#endif
+
 	int do_receive_ignore_error_part_data;
 	int do_receive_404_as_empty_part;
 	int do_receive_structured;
@@ -601,8 +600,6 @@ static int httpclient_final_callback_receive_data (
 	);
 }
 
-#ifdef RRR_WITH_JSONC
-
 struct httpclient_create_message_from_json_broker_callback_data {
 	struct httpclient_data *httpclient_data;
 	const struct rrr_http_transaction *transaction;
@@ -746,8 +743,6 @@ static int httpclient_final_callback_receive_json (
 			&callback_data
 	);
 }
-
-#endif /* RRR_WITH_JSONC */
 
 static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
 	struct httpclient_data *data = arg;
@@ -1096,7 +1091,6 @@ static int httpclient_final_callback (
 		);
 	}
 
-#ifdef RRR_WITH_JSONC
 	if (httpclient_data->do_receive_json_data) {
 		RRR_DBG_3("httpclient instance %s creating messages with JSON data\n",
 				INSTANCE_D_NAME(httpclient_data->thread_data));
@@ -1109,7 +1103,6 @@ static int httpclient_final_callback (
 				&structured_data
 		);
 	}
-#endif /* RRR_WITH_JSONC */
 
 	out:
 	rrr_array_clear(&structured_data);
@@ -2050,16 +2043,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
-#ifdef RRR_WITH_JSONC
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_json_data", do_receive_json_data, 0);
-#else
-	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_receive_json_data",
-		RRR_MSG_0("Parameter 'http_receive_json_data' is set in httpclient instance %s but RRR is not compiled with JSON support.\n",
-			config->name_debug);
-		ret = 1;
-		goto out;
-	);
-#endif /* RRR_WITH_JSONC */
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_ignore_error_part_data", do_receive_ignore_error_part_data, 1 /* Default is yes */);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_404_as_empty_part", do_receive_404_as_empty_part, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_structured", do_receive_structured, 0);

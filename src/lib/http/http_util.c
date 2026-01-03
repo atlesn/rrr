@@ -51,9 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../zlib/rrr_zlib.h"
 #endif
 
-#ifdef RRR_WITH_JSONC
 #include "../json/json.h"
-#endif
 
 #define RRR_HTTP_UTIL_JSON_TO_ARRAYS_MAX_LEVELS 5
 
@@ -1605,11 +1603,7 @@ enum rrr_http_body_format rrr_http_util_format_str_to_enum (
 		format = RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA;
 	}
 	else if (strcasecmp(format_str, "json") == 0) {
-#ifdef RRR_WITH_JSONC
 		format = RRR_HTTP_BODY_FORMAT_JSON;
-#else
-		RRR_MSG_0("Warning: Value 'json' set for HTTP format in rrr_http_util_format_str_to_enum, but RRR is not compiled with JSON support. Defaulting to URLENCODED\n", format_str);
-#endif
 	}
 	else if (strcasecmp(format_str, "raw") == 0) {
 		format = RRR_HTTP_BODY_FORMAT_RAW;
@@ -1718,7 +1712,7 @@ const char *rrr_http_util_iana_response_phrase_from_status_code (
 	out_unknown:
 	return "Unknown status";
 }
-#ifdef RRR_WITH_JSONC
+
 int rrr_http_util_json_to_arrays (
 		const char *data,
 		rrr_length data_size,
@@ -1727,7 +1721,7 @@ int rrr_http_util_json_to_arrays (
 ) {
 	return rrr_json_to_arrays (data, data_size, RRR_HTTP_UTIL_JSON_TO_ARRAYS_MAX_LEVELS, callback, callback_arg);
 }
-#endif
+
 #ifdef RRR_HTTP_UTIL_WITH_ENCODING
 int rrr_http_util_encode (
 		struct rrr_nullsafe_str *output,

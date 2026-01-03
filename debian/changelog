@@ -1,6 +1,11 @@
-rrr (1.40-1) trixie; urgency=medium
+rrr (1.40-2) trixie; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
+  * Changes:
+    * Require build with JSON-C bindings
+
+  * Features:
+    * The rrr_sub MQTT utility supports nice print of JSON messages
 
  -- Atle Solbakken <atle@goliathdns.no>  Thu, 18 Dec 2025 09:30:54 +0100
 

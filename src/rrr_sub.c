@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2022-2026 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "../build_timestamp.h"
+#include "lib/rrr_config.h"
+#include "lib/util/macro_utils.h"
 #include "main.h"
 #include "lib/allocator.h"
 #include "lib/common.h"
@@ -41,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/messages/msg.h"
 #include "lib/messages/msg_msg.h"
 #include "lib/messages/msg_dump.h"
+#include "lib/json/json.h"
 
 #define RRR_MQTT_SUB_TOPICS_MAX 64
 #define RRR_MQTT_DISCONNECT_TIMEOUT_S 5
@@ -52,8 +55,10 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'B',    "broker",               "[-B|--broker]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'P',    "port",                 "[-P|--port]"},
 	{CMD_ARG_FLAG_HAS_ARGUMENT,    'Q',    "qos",                  "[-Q|--qos]"},
+	{0,                            'n',    "nice-json",            "[-n|--nice-json]"},
 	{0,                            '3',    "protocol-v3",          "[-3|--protocol-v3]"},
 	{0,                            '5',    "protocol-v5",          "[-5|--protocol-v5]"},
+	{0,                            'j',    "json",                 "[-j|--json]"},
         {0,                            'l',    "loglevel-translation", "[-l|--loglevel-translation]"},
         {0,                            'b',    "banner",               "[-b|--banner]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -68,6 +73,8 @@ struct rrr_sub_data {
 	struct rrr_mqtt_subscription_collection topics;
 	char *broker;
 	uint16_t port;
+
+	uint8_t nice_json;
 
 	uint8_t use_v3;
 	uint8_t use_v5;
@@ -118,8 +125,6 @@ static int __rrr_sub_packet_parsed_handler (struct rrr_mqtt_client_data *client,
 static void __rrr_sub_receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	struct rrr_sub_data *data = arg;
 
-	(void)(data);
-
 	struct rrr_msg *msg_tmp = NULL;
 	rrr_length msg_target_size = 0;
 
@@ -146,11 +151,26 @@ static void __rrr_sub_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 		}
 	}
 	else if (publish->payload->size > 0) {
+		if (data->nice_json) {
+			struct rrr_json_object *json;
+			char *data_tmp;
+			if (rrr_json_object_parse_nolog(&json, publish->payload->payload_start, publish->payload->size) != 0) {
+				goto not_json;
+			}
+			rrr_json_from_object_nolog_pretty(&data_tmp, json);
+			rrr_log_printn_plain(data_tmp, strlen(data_tmp));
+			rrr_free(data_tmp);
+			goto out;
+		}
+
+		not_json:
 		rrr_log_printn_plain(publish->payload->payload_start, publish->payload->size);
-		rrr_log_printn_plain("\n", 1);
 	}
 
 	out:
+	if (!rrr_config_global.do_json_output) {
+		rrr_log_printn_plain("\n", 1);
+	}
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 }
 
@@ -207,6 +227,12 @@ static int __rrr_sub_init (
 		}
 	}
 
+	// Nice JSON output
+	const int nice_json = cmd_exists(cmd, "nice-json", 0);
+	if (nice_json) {
+		data->nice_json = nice_json && 1;
+	}
+
 	// V3, V5 or both
 	const int v3 = cmd_exists(cmd, "protocol-v3", 0);
 	const int v5 = cmd_exists(cmd, "protocol-v5", 0);
@@ -252,11 +278,11 @@ static int __rrr_sub_init (
 			rrr_mqtt_session_collection_ram_new_client,
 			NULL,
 			__rrr_sub_suback_unsuback_handler,
-			&data,
+			data,
 			__rrr_sub_packet_parsed_handler,
-			&data,
+			data,
 			__rrr_sub_receive_publish,
-			&data
+			data
 	)) != 0) {
 		goto out_cleanup_topic;
 	}

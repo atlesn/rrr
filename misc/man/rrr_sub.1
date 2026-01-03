@@ -1,4 +1,4 @@
-.Dd 2022-05-05
+.Dd 2026-01-02
 .TH RRR_SUB 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -11,9 +11,11 @@ Both messages containing RRR messages and plain data are supported.
 .B rrr_sub [TOPIC]...
 .Dl [-B|--broker[=]BROKER] (defaults to localhost)
 .Dl [-P|--port[=]PORT] (defaults to 1883)
+.Dl [-n|--nice-json]
 .Dl [-Q|--qos[=]QoS] (defaults to 0)
 .Dl [-5|--protocol-v5]
 .Dl [-3|--protocol-v3]
+.Dl [-j|--json]
 .Dl [-l|--loglevel-translation]
 .Dl [-b|--banner]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
@@ -38,11 +40,17 @@ One or more topic filters to subscribe to may be specified. If none are given, n
 Set the address of the broker to use. 'localhost' is used if left unset.
 .IP -P|--port[=]PORT
 Set the port number to use when connecting to the broker. Port 1883 is used if left unset.
+.IP -n|--nice-json
+Attempt to interpret received messages (which plain MQTT data messages) as JSON and produce a formatted output.
 .IP -Q|--qos[=]QoS
 Set the Quality of Service of subscriptions to 2, 1 or 0. The actual QoS the broker accepts for each subscription might be different.
-.IP [-5|--protocol-v5]
-.IP [-3|--protocol-v3]
+.IP -5|--protocol-v5
+.IP -3|--protocol-v3
 Enable protocol version 3.1.1 and/or 5. The default behaviour is that 5 is tried first, then 3.1.1 if the connection fails.
+.IP -j|--json
+If given, logging will be printed in JSON format. Refer to
+.Xr rrr_logd(1)
+for details.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
