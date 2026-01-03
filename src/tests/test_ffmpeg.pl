@@ -24,8 +24,12 @@ sub process {
 	my $message = shift;
 
 	my $filename = ($message->get_tag_all("ffmpeg_filename"))[0];
+	my $directory = ($message->get_tag_all("ffmpeg_directory"))[0];
 
-	chdir("/tmp") or die "Could not change directory to /tmp: %!\n";
+	die "Directory missing\n" unless defined $directory;
+	die "Directory was not /tmp\n" unless $directory eq "/tmp";
+
+	chdir($directory) or die "Could not change directory to $directory: %!\n";
 
 	die "Filename missing\n" unless defined $filename;
 	die "Filename format error\n" unless $filename =~ /^out-\d\d\d\d\d\d\d\dT\d\d\d\d\d\dZ\.mp4$/;

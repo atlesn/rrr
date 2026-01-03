@@ -268,7 +268,7 @@ static void ffmpeg_log_rva (
 	rrr_log_vprintf(__FILE__, __LINE__, level, prefix, fmt, args);
 }
 
-static int ffmpeg_report_callback(const char *filename, int64_t packet_count, void *arg) {
+static int ffmpeg_report_callback(const char *directory, const char *filename, int64_t packet_count, void *arg) {
 	int ret = 0;
 
 	struct ffmpeg_worker_data *worker_data = arg;
@@ -289,6 +289,11 @@ static int ffmpeg_report_callback(const char *filename, int64_t packet_count, vo
 
 	if (rrr_array_push_value_str_with_tag(&array, "ffmpeg_filename", filename) != 0) {
 		RRR_MSG_0("Failed to push filename to array in %s\n", __func__);
+		goto fail;
+	}
+
+	if (rrr_array_push_value_str_with_tag(&array, "ffmpeg_directory", directory) != 0) {
+		RRR_MSG_0("Failed to push directory to array in %s\n", __func__);
 		goto fail;
 	}
 

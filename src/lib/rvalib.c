@@ -446,11 +446,7 @@ static int rva_open_encoder(
 	AVFormatContext *oc = NULL;
 	AVCodecContext *avctx;
 	const AVCodec *codec;
-	char cwd[PATH_MAX] = {0};
 	AVStream *stream;
-
-	getcwd(cwd, sizeof(cwd));
-	rva_info("CWD: %s\n", cwd);
 
 	rva_info("Open output timebase %i/%i format %i\n", time_base.num, time_base.den, pixel_format);
 
@@ -546,6 +542,7 @@ void rva_close_encoder(int *did_close, RVAEncoderPrivateContext *octx) {
 static int rva_encoder_close_and_report (
 		RVAEncoderPrivateContext *octx,
 		RVAEncoderContext *ectx,
+		const char *directory,
 		const char *filename,
 		int64_t packet_count
 ) {
@@ -563,7 +560,7 @@ static int rva_encoder_close_and_report (
 	if (!ectx->report_callback)
 		goto out;
 
-	err = ectx->report_callback(filename, packet_count, ectx->report_callback_arg);
+	err = ectx->report_callback(directory, filename, packet_count, ectx->report_callback_arg);
 	if (err)
 		goto fail;
 
@@ -589,6 +586,12 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 	double elapsed_s = 0.0f;
 	int64_t pts_offset = 0;
 	int rounds = ctx->rounds;
+	char cwd[PATH_MAX] = {0};
+
+	if (getcwd(cwd, sizeof(cwd)) != cwd) {
+		rva_error("Failed to get current directory\n");
+		goto fail;
+	}
 
 	frame = av_frame_alloc();
 	if (!frame) {
@@ -633,7 +636,8 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 				else
 					sprintf(filename, "%s%04u%s", ctx->filename_prefix, filename_index, ctx->filename_suffix);
 
-				rva_info("Using output file %s\n", filename);
+				rva_info("Using output file %s, current directory is %s\n",
+					filename, cwd);
 
 				filename_index++;
 
@@ -652,9 +656,6 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 					goto fail;
 				}
 
-	char cwd[PATH_MAX] = {0};
-	getcwd(cwd, sizeof(cwd));
-	rva_info("CWD: %s\n", cwd);
 				err = avio_open(&octx.oc->pb, filename, AVIO_FLAG_WRITE);
 				if (err) {
 					rva_error("Failed to open output file '%s': %s\n", filename, av_err2str(err));
@@ -750,7 +751,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 		}
 		else {
 			assert (state & ENCODER_STATE_RUN && "State was not RUN");
-			rva_encoder_close_and_report(&octx, ctx, filename, packet_count_file);
+			rva_encoder_close_and_report(&octx, ctx, cwd, filename, packet_count_file);
 			state &= ~(ENCODER_STATE_FLUSH|ENCODER_STATE_RUN);
 			goto encode;
 		}
@@ -761,7 +762,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 		ret = 1;
 	out:
 		rva_info("Encoder thread exiting\n");
-		rva_encoder_close_and_report(&octx, ctx, filename, packet_count_file);
+		rva_encoder_close_and_report(&octx, ctx, cwd, filename, packet_count_file);
 		av_frame_free(&frame);
 		av_packet_free(&packet);
 		return ret;

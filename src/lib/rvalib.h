@@ -36,7 +36,7 @@ typedef enum RVALogLevel {
 	RVA_LOG_LEVEL_INFO
 } RVALogLevel;
 
-typedef int (*RVAReportCallback)(const char *filename, int64_t frame_count, void *arg);
+typedef int (*RVAReportCallback)(const char *directory, const char *filename, int64_t frame_count, void *arg);
 
 #define BUFSIZE 16
 
