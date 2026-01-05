@@ -26,6 +26,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../rrr_types.h"
 
+struct rrr_timespec {
+	int year;
+	int month;
+	int day;
+	int hour;
+	int minute;
+	int second;
+};
+
 static inline rrr_time_s_t rrr_time_s_from_ms (rrr_time_ms_t ms) {
 	rrr_time_s_t s = { ms.ms / 1000 };
 	return s;
@@ -90,10 +99,12 @@ struct timespec;
 
 uint64_t rrr_time_get_64(void);
 rrr_time_us_t rrr_time_get_us(void);
+rrr_time_us_t rrr_time_get_us_offset(rrr_time_us_t offset);
 int64_t rrr_time_get_i64(void);
 int rrr_time_get_64_nano(uint64_t *result, uint64_t s_factor);
 void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add);
 void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add);
 void rrr_time_from_usec (struct timeval *__restrict __tv, uint64_t usec);
+void rrr_time_utc (struct rrr_timespec *result);
 
 #endif /* RRR_TIME_H */

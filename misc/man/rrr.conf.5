@@ -1,4 +1,4 @@
-.Dd 2025-02-25
+.Dd 2025-12-18
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -517,6 +517,9 @@ Traps log messages from all modules and saves them into RRR messages.
 .It file (PA)
 Reads from files, sockets, character devices and FIFO pipes.
 
+.It directory (SA)
+Indexes directories.
+
 .It mysql (DAI)
 Saves records to a MySQL or MariaDB table.
 
@@ -531,6 +534,9 @@ Collects point measurements and calculates average values.
 
 .It artnet (PA)
 Controls DMX devices using the Art-Net protocol.
+
+.It ffmpeg (PA)
+Video capture and transcoding using FFmpeg libraries.
 
 .El
 .SS dummy (S)
@@ -3910,6 +3916,47 @@ for a list of valid modes.
 For write to be possible, proper permissions must be given (read + write permissions for the user should always be set).
 
 .El
+.SS directory(SA)
+This module will index a directory on a given interval producing array messages containing all found filenames.
+.PP
+Any sub-directories are ignored.
+.PP
+Messages produced will have the following array fields present:
+.Bl -tag -width -indent
+.It file_directory
+.It file_name
+The original path of the file before any symbolic link resolving.
+.Pp
+.It file_path_resolved
+The resolved path (in case original is a symbolic link) of the file respectively.
+.El
+There will be one
+.B file_name
+and one
+.B file_path_resolved
+for every file found present in the array.
+The first file will be described by the first entry for each value and so on.
+.PP
+There will only be one
+.B file_directory
+value which is common for all files.
+.PP
+The following configuration parameters are available for the
+.B directory
+module:
+.PP
+.Bl -tag -width -indent
+.It directory_directory=DIRECTORY
+The directory in which to search for files.
+
+.It directory_probe_interval_s=SECONDS
+How often to probe for files. If not given, probing will occur every 5 seconds.
+
+.It directory_prefix=FILE PREFIX
+Ignore any files not having the given prefix. If left unset, no files are ignored.
+
+.El
+
 .SS mysql (DAI)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
 database.
@@ -4182,6 +4229,61 @@ be calculated using the following formula:
 
 As an example, if the fade speed is 5, a fade from 0 to 255 will take about 1000 milliseconds.
 
+.El
+
+.SS ffmpeg (PA)
+The
+.B ffmpeg
+module takes command messages from reader instances and sets up pipelines for video processing.
+
+Audio is not supported.
+
+Any output will be in MP4 format using libx264 encoding.
+.PP
+The following configuration parameters are available in the
+.B ffmpeg
+module:
+.PP
+.Bl -tag -width -indent
+.It ffmpeg_source=URL
+A URL describing the video source.
+If not given, a dummy stream will be generated.
+
+.It ffmpeg_filter_scale=WIDTHxHEIGHT
+If given, the video stream is run through a scaling filter to produce the chosen dimensions.
+
+.It ffmpeg_filename_format={counter|timestamp}
+Specify a format template for filenames of generated files.
+.Bl -tag -width -indent
+.It counter
+The filenames will be in the format "out-nnnn.mp4" where nnnn is an integer incremented once for every file being rotated.
+.It date
+The filename will be in the format "out-YYYYMMDDTHHMMSSZ.mp4", representing the time and date in UTC for when the file was opened.
+
+.El
+If not given, the 'counter' format will be used.
+
+.It ffmpeg_output_directory=PATH
+Output directory for video files.
+Any existing files will be overwritten should their names collide.
+
+.It ffmpeg_duration_s=SECONDS
+If given and set to something greater than zero, the output file will be rotated the given amount of seconds so that now file will exceed this length.
+
+.If ffmpeg_rounds=UNSIGNED INTEGER
+If given and set to something greater than zero, the ffmpeg instance will exit after the given amount of files has been generated,
+effectively causing a program restart.
+
+.It ffmpeg_report_messages={yes|no}
+If given and set to 'yes', report array messages will be generated whenever an file is closed.
+The following fields are included in report messages:
+.Bl -tag -width -indent
+
+.It ffmpeg_filename
+Contains the name of the output file.
+
+.It ffmpeg_directory
+Contains the directory of the output file.
 .El
 
 .SH COMMON CONFIGURATION PARAMETERS

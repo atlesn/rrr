@@ -67,6 +67,10 @@ void rrr_cmodule_helper_loop_with_periodic (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 );
+void rrr_cmodule_helper_config (
+		struct rrr_instance_runtime_data *thread_data,
+		enum rrr_cmodule_process_mode process_mode
+);
 int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_runtime_data *thread_data,
 		const char *config_prefix,

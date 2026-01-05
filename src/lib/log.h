@@ -81,6 +81,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_DEBUGLEVEL_OK(x) \
 	(x >= __RRR_LOG_PREFIX_0 && x <= __RRR_LOG_PREFIX_8)
 
+#define RRR_DEBUGLEVEL_ERROR   __RRR_DEBUGLEVEL_0
+#define RRR_DEBUGLEVEL_WARNING __RRR_DEBUGLEVEL_1
+#define RRR_DEBUGLEVEL_INFO    __RRR_DEBUGLEVEL_1
+#define RRR_DEBUGLEVEL_DEBUG   __RRR_DEBUGLEVEL_1
+
 // Unchecked operation, should not cause dangerous situations.
 // Caller should nevertheless use RRR_DEBUGLEVEL_OK macro first.
 #define RRR_DEBUGLEVEL_NUM_TO_FLAG(x) \

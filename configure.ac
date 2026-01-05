@@ -69,6 +69,7 @@ AC_ARG_WITH([http3],[AS_HELP_STRING([--without-http3],[build without the NGHTTP3
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([artnet],[AS_HELP_STRING([--with-artnet],[build with the libartnet bindings])],[enable_artnet=yes],[enable_artnet=no])
+AC_ARG_WITH([ffmpeg],[AS_HELP_STRING([--with-ffmpeg],[build with the FFmpeg bindings])],[enable_ffmpeg=yes],[enable_ffmpeg=no])
 AC_ARG_WITH([lua],[AS_HELP_STRING([--without-lua],[build without the Lua bindings])],[enable_lua=no],[enable_lua=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
@@ -179,6 +180,7 @@ SHELL_VARS_EXPORT([RRR_WITH_HTTP3], $enable_http3)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
 SHELL_VARS_EXPORT([RRR_WITH_LUA], $enable_lua)
 SHELL_VARS_EXPORT([RRR_WITH_ARTNET], $enable_artnet)
+SHELL_VARS_EXPORT([RRR_WITH_FFMPEG], $enable_ffmpeg)
 SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 SHELL_VARS_EXPORT([RRR_WITH_JS], $enable_js)
@@ -196,6 +198,7 @@ AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_HTTP3], [test "x$enable_http3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_ARTNET], [test "x$enable_artnet" != xno])
+AM_CONDITIONAL([RRR_WITH_FFMPEG], [test "x$enable_ffmpeg" != xno])
 AM_CONDITIONAL([RRR_WITH_LUA], [test "x$enable_lua" != xno])
 AM_CONDITIONAL([RRR_WITH_ZLIB], [test "x$enable_zlib" != xno])
 AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
@@ -1370,6 +1373,31 @@ AS_IF([test "x$enable_artnet" = xno], [
 	AC_SUBST([ARTNET_CFLAGS])
 	AC_SUBST([ARTNET_LDFLAGS])
 	AC_SUBST([ARTNET_LIBS])
+])
+
+AC_MSG_CHECKING([for FFmpeg enabled])
+AS_IF([test "x$enable_ffmpeg" = xno], [
+	AC_MSG_RESULT([Not compiling with FFmpeg])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_FFMPEG], [1], [Compile with FFmpeg bindings])
+
+	AC_MSG_CHECKING([for FFmpeg CFLAGS])
+	FFMPEG_CFLAGS=`pkg-config --cflags libavcodec libavfilter libavformat libavutil`
+	AS_IF([test $? -ne 0], [
+		AC_MSG_ERROR(["pkg-config failed for FFmpeg libraries, make sure they are installed."])
+	])
+	AC_MSG_RESULT([${FFMPEG_CFLAGS}])
+
+	AC_MSG_CHECKING([for FFmpeg LIBS])
+	FFMPEG_LIBS=`pkg-config --libs libavcodec libavfilter libavformat libavutil`
+	AS_IF([test $? -ne 0], [
+		AC_MSG_ERROR(["pkg-config failed for FFmpeg libraries, make sure they are installed."])
+	])
+	AC_MSG_RESULT([${FFMPEG_LIBS}])
+
+	AC_SUBST([FFMPEG_CFLAGS])
+	AC_SUBST([FFMPEG_LIBS])
 ])
 
 # Make sure json-c-test does not include any libraries

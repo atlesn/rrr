@@ -624,13 +624,14 @@ static int __rrr_cmodule_worker_spawn_message (
 	return ret;
 }
 
-int __rrr_cmodule_worker_send_pong (
-		struct rrr_cmodule_worker *worker
+static int __rrr_cmodule_worker_send_ctrl (
+		struct rrr_cmodule_worker *worker,
+		int flags
 ) {
 	int ret = 0;
 
 	struct rrr_msg msg = {0};
-	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
+	rrr_msg_populate_control_msg(&msg, flags, 0);
 
 	ret = rrr_cmodule_channel_send_message_simple (
 			worker->channel_to_parent,
@@ -652,6 +653,18 @@ int __rrr_cmodule_worker_send_pong (
 	// Errors propagate
 
 	return ret;
+}
+
+static int __rrr_cmodule_worker_send_pong (
+		struct rrr_cmodule_worker *worker
+) {
+	return __rrr_cmodule_worker_send_ctrl(worker, RRR_MSG_CTRL_F_PONG);
+}
+
+static int __rrr_cmodule_worker_send_done (
+		struct rrr_cmodule_worker *worker
+) {
+	return __rrr_cmodule_worker_send_ctrl(worker, RRR_MSG_CTRL_F_DONE);
 }
 
 static void __rrr_cmodule_worker_event_spawn (
@@ -842,6 +855,10 @@ static int __rrr_cmodule_worker_loop (
 			worker->received_stop_signal,
 			ret_tmp
 	);
+
+	if (__rrr_cmodule_worker_send_done(worker) != 0) {
+		RRR_MSG_0("Warning: Failed to send done message to parent after worker loop %s completed\n", worker->name);
+	}
 
 	out_cleanup_events:
 	rrr_event_collection_clear(&events);

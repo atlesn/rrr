@@ -65,7 +65,7 @@ static void __rrr_cmodule_main_worker_kill (
 	// Don't wrap these inside lock
 	// Just do our ting disregarding return values
 
-	RRR_DBG_1("Parent sending SIGUSR1 to worker fork %s pid %i, then sleeping for 100ms\n",
+	RRR_DBG_1("Parent sending SIGUSR1 to worker fork %s pid %i, then sleeping for 150ms\n",
 			worker->name, pid);
 	kill(pid, SIGUSR1);
 

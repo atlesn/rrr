@@ -76,6 +76,12 @@ rrr_time_us_t rrr_time_get_us(void) {
 	return result;
 }
 
+rrr_time_us_t rrr_time_get_us_offset(rrr_time_us_t offset) {
+	rrr_time_us_t result = { rrr_time_get_64() };
+	result.us += offset.us;
+	return result;
+}
+
 int rrr_time_get_64_nano(uint64_t *result, uint64_t s_factor) {
 	struct timespec tp;
 
@@ -122,4 +128,20 @@ void rrr_time_from_usec (struct timeval *__restrict __tv, uint64_t usec) {
 	result.tv_sec = (time_t) ((usec - usec_part) / 1000000);
 
 	*__tv = result;
+}
+
+void rrr_time_utc (struct rrr_timespec *result) {
+	time_t now = time(NULL);
+	struct tm utc_time;
+	if (gmtime_r(&now, &utc_time) == NULL) {
+		RRR_BUG("Failed to get time in %s\n", __func__);
+	}
+	*result = (struct rrr_timespec){
+		.year = utc_time.tm_year + 1900,
+		.month = utc_time.tm_mon + 1,
+		.day = utc_time.tm_mday,
+		.hour = utc_time.tm_hour,
+		.minute = utc_time.tm_min,
+		.second = utc_time.tm_sec
+	};
 }

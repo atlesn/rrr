@@ -88,6 +88,8 @@ struct rrr_mmap_channel {
 
 	int cleanup_needed;
 
+	int writer_blocks_freed;
+
 	char name[64];
 
 	unsigned long long int write_full_counter;
@@ -549,10 +551,14 @@ void rrr_mmap_channel_destroy (
 	munmap(target, sizeof(*target));
 }
 
-void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
+void rrr_mmap_channel_writer_free_blocks (
+		struct rrr_mmap_channel *target
+) {
 	int ret = 0;
 
 	INDEX_LOCK(target);
+
+	assert(target->writer_blocks_freed == 0 && "Double call to mmap channel writer blocks free");
 
 	// This function does not lock the blocks in case the reader has crashed
 	// while holding the mutex
@@ -562,10 +568,26 @@ void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
 
 	target->wpos = 0;
 	target->rpos = 0;
+	target->writer_blocks_freed = 1;
 
 	INDEX_UNLOCK(target);
 
 	return;
+
+	out_lock_err:
+	RRR_BUG("Cannot handle lock failure in %s\n", __func__);
+}
+
+int rrr_mmap_channel_check_writer_blocks_freed (
+		struct rrr_mmap_channel *target
+) {
+	int ret, res;
+
+	INDEX_LOCK(target);
+	res = target->writer_blocks_freed;
+	INDEX_UNLOCK(target);
+
+	return res;
 
 	out_lock_err:
 	RRR_BUG("Cannot handle lock failure in %s\n", __func__);

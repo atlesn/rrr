@@ -533,4 +533,8 @@ typedef struct rrr_time_us_s {
 #define RRR_US(n) \
     { .us = n }
 
+#define PRIrrrs PRIu64
+#define PRIrrrms PRIu64
+#define PRIrrrus PRIu64
+
 #endif /* RRR_TYPES_H */

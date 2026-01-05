@@ -44,6 +44,14 @@ librrrartnet_la_LIBS = ${ARTNET_LIBS}
 artnet_extra_ld = ${ARTNET_LDFLAGS} ${ARTNET_LIBS}
 endif
 
+if RRR_WITH_FFMPEG
+libadd_ffmpeg = librrrffmpeg.la
+librrrffmpeg_la_SOURCES = rvalib.c
+librrrffmpeg_la_CFLAGS = ${FFMPEG_CFLAGS} ${AM_CFLAGS}
+librrrffmpeg_la_LIBS = ${FFMPEG_LIBS}
+ffmpeg_extra_ld = ${FFMPEG_LIBS}
+endif
+
 if RRR_WITH_LUA
 libadd_lua = librrrlua.la
 librrrlua_la_SOURCES = lua/lua.c \
@@ -217,6 +225,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
                     ${crypto_extra_ld} \
                     ${openssl_extra_ld} \
 		    ${artnet_extra_ld} \
+		    ${ffmpeg_extra_ld} \
                     ${libressl_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
@@ -287,6 +296,7 @@ libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
     ${libadd_artnet}                 \
+    ${libadd_ffmpeg}                 \
     ${libadd_lua}                    \
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \

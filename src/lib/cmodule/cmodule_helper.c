@@ -473,6 +473,7 @@ struct rrr_cmodule_read_from_fork_callback_data {
 	int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
 	void *final_callback_arg;
 	int read_count;
+	int done;
 };
 
 static int __rrr_cmodule_helper_read_from_fork_message_callback (
@@ -584,6 +585,8 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
 ) {
+	int ret = 0;
+
 	struct rrr_msg msg_copy = *msg;
 
 	(void)(data_size);
@@ -602,6 +605,12 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_CTRL_F_PONG);
 	}
 
+	if (RRR_MSG_CTRL_F_HAS(&msg_copy, RRR_MSG_CTRL_F_DONE)) {
+		RRR_DBG_1("Received done signal from worker %s\n", callback_data->worker->name);
+		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_CTRL_F_DONE);
+		callback_data->done = 1;
+	}
+
 	// CTRL type is returned by FLAGS() macro, clear it to
 	// make sure no unknown flags are set
 	RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_TYPE_CTRL);
@@ -611,7 +620,7 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 				RRR_MSG_CTRL_FLAGS(&msg_copy), callback_data->worker->name);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_t data_size, void *arg) {
@@ -659,33 +668,35 @@ static int __rrr_cmodule_helper_read_from_worker (
 	}
 
 	struct rrr_cmodule_read_from_fork_callback_data callback_data = {
-			worker,
-			thread_data,
-			final_callback,
-			final_callback_arg,
-			0
+		worker,
+		thread_data,
+		final_callback,
+		final_callback_arg,
+		0,
+		0
 	};
 
-	if ((ret = rrr_cmodule_channel_receive_messages (
+	ret = rrr_cmodule_channel_receive_messages (
 			amount,
 			worker->channel_to_parent,
 			__rrr_cmodule_helper_read_from_fork_callback,
 			&callback_data
-	)) != 0) {
-		if (ret == RRR_CMODULE_CHANNEL_EMPTY) {
-			ret = 0;
-			goto out;
+	);
+
+	ret &= ~(RRR_CMODULE_CHANNEL_EMPTY);
+
+	if (ret == 0) {
+		if (callback_data.done) {
+			ret = RRR_EVENT_EXIT;
 		}
-		else if (ret == RRR_EVENT_EXIT) {
-			// Propagate
-			goto out;
-		}
-		else {
-			RRR_MSG_0("Error %i while reading from worker fork %s\n",
-					ret, worker->name);
-			ret = 1;
-			goto out;
-		}
+	}
+	else if (ret == RRR_EVENT_EXIT) {
+		// Propagate
+	}
+	else {
+		RRR_MSG_0("Error %i while reading from worker fork %s\n",
+				ret, worker->name);
+		ret = 1;
 	}
 
 	out:
@@ -898,6 +909,34 @@ int rrr_cmodule_helper_methods_iterate (
 	);
 }
 
+static void __rrr_cmodule_helper_wait_for_worker_cleanup (
+		struct rrr_cmodule *cmodule
+) {
+	rrr_time_us_t timeout = rrr_time_get_us_offset(rrr_time_us_from_s(rrr_cmodule_worker_fork_cleanup_timeout));
+	int worker_not_done;
+
+	do {
+		worker_not_done = 0;
+
+		rrr_posix_usleep(100 * 1000 /* 100 ms */);
+
+		for (int i = 0; i < cmodule->worker_count; i++) {
+			struct rrr_cmodule_worker *worker = &cmodule->workers[i];
+			if (!rrr_mmap_channel_check_writer_blocks_freed(worker->channel_to_parent)) {
+				RRR_DBG_1("Worker %s of instance %s has not yet finished cleaning up\n", worker->name, cmodule->name);
+				worker_not_done = 1;
+			}
+		}
+
+		if (rrr_time_us_lt(timeout, rrr_time_get_us())) {
+			RRR_MSG_0("Warning: Timeout while waiting for workers to clean up in instance %s\n", cmodule->name);
+			return;
+		}
+	} while (worker_not_done);
+
+	RRR_DBG_1("All workers of instance %s have cleaned up\n", cmodule->name);
+}
+
 static void __rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
@@ -971,6 +1010,8 @@ static void __rrr_cmodule_helper_loop (
 			INSTANCE_D_THREAD(thread_data)
 	);
 
+	__rrr_cmodule_helper_wait_for_worker_cleanup(cmodule);
+
 	out:
 	pthread_cleanup_pop(1);
 	return;
@@ -987,6 +1028,24 @@ void rrr_cmodule_helper_loop_with_periodic (
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 ) {
 	__rrr_cmodule_helper_loop(thread_data, app_periodic_callback);
+}
+
+void rrr_cmodule_helper_config (
+		struct rrr_instance_runtime_data *thread_data,
+		enum rrr_cmodule_process_mode process_mode
+) {
+	struct rrr_cmodule_config_data *data = &(INSTANCE_D_CMODULE(thread_data)->config_data);
+
+	data->worker_spawn_interval = rrr_time_us_from_ms(rrr_cmodule_worker_default_spawn_interval);
+	data->config_worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
+	data->process_mode = process_mode;
+	data->do_spawning = 0;
+	data->do_drop_on_error = 0;
+
+	data->config_method = NULL;
+	data->process_method = NULL;
+	data->source_method = NULL;
+	data->log_prefix = NULL;
 }
 
 int rrr_cmodule_helper_parse_config (

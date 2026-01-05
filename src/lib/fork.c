@@ -249,12 +249,13 @@ static void __rrr_fork_wait_loop (
 					RRR_DBG_1("Wait pid %i ok\n", node->pid);
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
-				else if (pid == -1 && errno == ECHILD) {
-					RRR_DBG_1("Error from waitpid on pid %i name [%s] in parent %i status %i after signalling errno is %i. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
-							node->pid, node->name, getpid(), status, errno);
+				else {
+					if (pid == -1 && errno == ECHILD) {
+						RRR_DBG_1("Error from waitpid on pid %i name [%s] in parent %i status %i after signalling errno is %i. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
+								node->pid, node->name, getpid(), status, errno);
+					}
+					*active_forks_found = 1;
 				}
-
-				*active_forks_found = 1;
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_set_waited_for(node));
 
@@ -306,7 +307,7 @@ void rrr_fork_send_sigusr1_and_wait (
 	 *		}*/
 		RRR_LL_ITERATE_END();
 
-		__rrr_fork_wait_loop(&active_forks_found, handler, 20); // 20 rounds = ~2 seconds
+		__rrr_fork_wait_loop(&active_forks_found, handler, 40); // 40 rounds = ~4 seconds
 	}
 
 	// Try SIGKILL

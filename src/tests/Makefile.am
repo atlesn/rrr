@@ -13,6 +13,10 @@ if RRR_WITH_ARTNET
 test_artnet = test_artnet.c
 endif
 
+if RRR_WITH_FFMPEG
+test_ffmpeg = test_ffmpeg.c
+endif
+
 if RRR_WITH_LUA
 test_lua = test_lua.c
 endif
@@ -46,6 +50,7 @@ test_SOURCES = test.c \
 	test_json.c \
 	${test_zlib} \
 	${test_artnet} \
+	${test_ffmpeg} \
 	${test_lua} \
 	${test_quic} \
 	test_conversion.c \
@@ -107,6 +112,7 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_dummy.sh            \
 	test_fifo.sh             \
 	test_file.sh             \
+	test_directory.sh        \
 	test_http.sh             \
 	test_sub_instance.sh     \
 	test_http2.sh            \

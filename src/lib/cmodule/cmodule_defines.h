@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static const rrr_time_ms_t rrr_cmodule_worker_default_sleep_time       = RRR_MS   (50);
 static const rrr_time_ms_t rrr_cmodule_worker_default_spawn_interval   = RRR_MS (1000);
 static const rrr_time_s_t  rrr_cmodule_worker_fork_pong_timeout        = RRR_S    (10);
+static const rrr_time_s_t  rrr_cmodule_worker_fork_cleanup_timeout     = RRR_S    (3);
 
 #define RRR_CMODULE_CHANNEL_SIZE             (1024*1024*2*RRR_CMODULE_WORKER_MAX_WORKER_COUNT)
 #define RRR_CMODULE_CHANNEL_WAIT_RETRIES     500
