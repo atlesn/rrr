@@ -182,7 +182,7 @@ static int directory_probe_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_array_push_value_str_with_tag(callback_data->array, "file_path_orig", orig_path)) != 0) {
+	if ((ret = rrr_array_push_value_str_with_tag(callback_data->array, "file_path_resolved", orig_path)) != 0) {
 		RRR_MSG_0("Failed to push array value in %s\n", __func__);
 		goto out;
 	}
