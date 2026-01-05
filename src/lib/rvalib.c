@@ -585,7 +585,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 	char filename[PATH_MAX];
 	double elapsed_s = 0.0f;
 	int64_t pts_offset = 0;
-	int rounds = ctx->rounds;
+	int round_counter = 0;
 	char cwd[PATH_MAX] = {0};
 
 	if (getcwd(cwd, sizeof(cwd)) != cwd) {
@@ -746,14 +746,15 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 	}
 
 	if (!(*thread->stop_now)) {
-		if (--rounds <= 0) {
-			rva_info("Specified number of rounds reached, not starting new encoding round.\n");
-		}
-		else {
+		if (++round_counter < ctx->rounds) {
+			rva_info("%i/%i rounds complete, begin new round\n", round_counter, ctx->rounds);
 			assert (state & ENCODER_STATE_RUN && "State was not RUN");
 			rva_encoder_close_and_report(&octx, ctx, cwd, filename, packet_count_file);
 			state &= ~(ENCODER_STATE_FLUSH|ENCODER_STATE_RUN);
 			goto encode;
+		}
+		else {
+			rva_info("%i/%i rounds complete, end encoding now\n", round_counter, ctx->rounds);
 		}
 	}
 
@@ -1090,7 +1091,7 @@ void rva_init_encoder(
 	ectx->frame_buf = frame_buf;
 	ectx->time_base = time_base;
 	ectx->duration = duration;
-	ectx->rounds = rounds;
+	ectx->rounds = rounds <= 0 ? INT_MAX : rounds;
 
 	tctx->arg = ectx;
 	tctx->main = rva_encoder_main;
