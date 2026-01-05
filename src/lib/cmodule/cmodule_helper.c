@@ -909,6 +909,34 @@ int rrr_cmodule_helper_methods_iterate (
 	);
 }
 
+static void __rrr_cmodule_helper_wait_for_worker_cleanup (
+		struct rrr_cmodule *cmodule
+) {
+	rrr_time_us_t timeout = rrr_time_get_us_offset(rrr_time_us_from_s(rrr_cmodule_worker_fork_cleanup_timeout));
+	int worker_not_done;
+
+	do {
+		worker_not_done = 0;
+
+		rrr_posix_usleep(100 * 1000 /* 100 ms */);
+
+		for (int i = 0; i < cmodule->worker_count; i++) {
+			struct rrr_cmodule_worker *worker = &cmodule->workers[i];
+			if (!rrr_mmap_channel_check_writer_blocks_freed(worker->channel_to_parent)) {
+				RRR_DBG_1("Worker %s of instance %s has not yet finished cleaning up\n", worker->name, cmodule->name);
+				worker_not_done = 1;
+			}
+		}
+
+		if (rrr_time_us_lt(timeout, rrr_time_get_us())) {
+			RRR_MSG_0("Warning: Timeout while waiting for workers to clean up in instance %s\n", cmodule->name);
+			return;
+		}
+	} while (worker_not_done);
+
+	RRR_DBG_1("All workers of instance %s have cleaned up\n", cmodule->name);
+}
+
 static void __rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
@@ -981,6 +1009,8 @@ static void __rrr_cmodule_helper_loop (
 			__rrr_cmodule_helper_event_periodic,
 			INSTANCE_D_THREAD(thread_data)
 	);
+
+	__rrr_cmodule_helper_wait_for_worker_cleanup(cmodule);
 
 	out:
 	pthread_cleanup_pop(1);

@@ -76,6 +76,12 @@ rrr_time_us_t rrr_time_get_us(void) {
 	return result;
 }
 
+rrr_time_us_t rrr_time_get_us_offset(rrr_time_us_t offset) {
+	rrr_time_us_t result = { rrr_time_get_64() };
+	result.us += offset.us;
+	return result;
+}
+
 int rrr_time_get_64_nano(uint64_t *result, uint64_t s_factor) {
 	struct timespec tp;
 

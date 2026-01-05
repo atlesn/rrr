@@ -516,6 +516,13 @@ void init(struct rrr_instance_module_data *data) {
 }
 
 void unload(void) {
-	RRR_DBG_1 ("Destroy ffmpeg module\n");
+	rrr_time_us_t sync_begin, sync_diff;
+
+	sync_begin = rrr_time_get_us();
+	sync();
+	sync_diff = rrr_time_us_sub(rrr_time_get_us(), sync_begin);
+
+	RRR_DBG_1 ("Destroy ffmpeg module (filesystem sync took %" PRIrrrus "us)\n",
+		sync_diff);
 }
 
