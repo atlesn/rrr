@@ -760,6 +760,7 @@ static int rva_encoder_main(RVAThreadContext *thread, void *arg) {
 
 	goto out;
 	fail:
+		packet_count_file = 0;
 		ret = 1;
 	out:
 		rva_info("Encoder thread exiting\n");
