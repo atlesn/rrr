@@ -107,6 +107,8 @@ static int directory_parse_config (struct directory_data *data, struct rrr_insta
 	for (size_t i = strlen(data->directory) - 1; i > 0; i--) {
 		if (data->directory[i] == '/')
 			data->directory[i] = '\0';
+		else
+			break;
 	}
 
 	/* On error, memory is freed by data_cleanup */
@@ -228,6 +230,9 @@ static int directory_probe (struct directory_data *data, const char *directory, 
 		RRR_MSG_0("Failed to push array value in %s\n", __func__);
 		goto out;
 	}
+
+	RRR_DBG_2("Directory instance %s probing for files in '%s' using prefix '%s'\n",
+		INSTANCE_D_NAME(data->thread_data), directory, prefix);
 
 	if ((ret = rrr_readdir_foreach_prefix (
 			directory,
