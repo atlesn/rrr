@@ -532,6 +532,9 @@ Collects point measurements and calculates average values.
 .It artnet (PA)
 Controls DMX devices using the Art-Net protocol.
 
+.It gpio (DA)
+Set outputs on GPIO devices
+
 .El
 .SS dummy (S)
 This module constantly generates empty messages, optionally containing some dummy data.
@@ -4182,6 +4185,35 @@ be calculated using the following formula:
 
 As an example, if the fade speed is 5, a fade from 0 to 255 will take about 1000 milliseconds.
 
+.El
+
+.SS gpio (DA)
+The
+.B gpio
+module allows setting outputs on GPIO devices.
+Reader instances of
+.B gpio
+produce command messages to set outputs either high or low.
+.PP
+In messages from sender instances, the following array values may be present:
+.PP
+.Bl -tag -width -indent
+.It gpio_line
+The line of the GPIO device to set, numeric value.
+.It gpio_set
+The value to set on the line, may be either
+.B on
+or
+.B off.
+.El
+.PP
+The following configuration parameters are available for the
+.B gpio
+module:
+.PP
+.Bl -tag -width -indent
+.It gpio_chip={DEVICE PATH}
+The path of the GPIO device to use.
 .El
 
 .SH COMMON CONFIGURATION PARAMETERS

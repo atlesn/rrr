@@ -53,12 +53,18 @@ artnet_la_SOURCES = p_artnet.c
 artnet_la_LDFLAGS = ${module_ldflags}
 endif
 
+if RRR_WITH_GPIO
+gpio = gpio.la
+gpio_la_SOURCES = d_gpio.c
+gpio_la_LDFLAGS = ${module_ldflags}
+endif
+
 lib_LTLIBRARIES = dummy.la raw.la \
 	ipclient.la ip.la averager.la file.la exploder.la mangler.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	msgdb.la incrementer.la cacher.la modbus.la \
-	${mysql} ${python3} ${voltmonitor} ${perl5} ${lua} ${js} ${artnet}
+	${mysql} ${python3} ${voltmonitor} ${perl5} ${lua} ${js} ${artnet} ${gpio}
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c

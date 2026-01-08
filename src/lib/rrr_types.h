@@ -130,6 +130,15 @@ static inline int rrr_size_from_biglength_err (size_t *target, rrr_biglength ope
 
 #endif
 
+static inline unsigned int rrr_uint_from_biglength_bug_const (rrr_biglength operand) {
+#if (RRR_BIGLENGTH_MAX > UINT_MAX)
+	if (operand > UINT_MAX) {
+		RRR_BUG("BUG: Overflow in %s, input was %" PRIrrrbl "\n", __func__, operand);
+	}
+#endif
+	return (unsigned int) operand;
+}
+
 static inline int rrr_int_from_slength_bug_const (rrr_slength operand) {
 #if (RRR_SLENGTH_MAX > INT_MAX) || (RRR_SLENGTH_MIN < INT_MIN)
 	if (operand < INT_MIN || operand > INT_MAX) {

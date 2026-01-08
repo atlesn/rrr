@@ -10,6 +10,10 @@ if RRR_WITH_ARTNET
 noinst_artnet=rrr_artnet_node
 endif
 
+if RRR_WITH_GPIO
+noinst_gpio=rrr_gpio
+endif
+
 SUBDIRS = lib modules tests cmodules 
 bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg rrr_sub rrr_logd
 noinst_PROGRAMS = rrr_http_client     \
@@ -18,6 +22,7 @@ noinst_PROGRAMS = rrr_http_client     \
                   rrr_readdir         \
                   rrr_modbus_server   \
                   ${noinst_artnet}    \
+                  ${noinst_gpio}      \
                   ${noinst_js}        \
                   ${noinst_lua}
 TESTS = test.sh
@@ -72,6 +77,12 @@ if RRR_WITH_ARTNET
 rrr_artnet_node_SOURCES = rrr_artnet_node.c main.c
 rrr_artnet_node_CFLAGS = ${AM_CFLAGS} -fpie
 rrr_artnet_node_LDFLAGS = ${ldflags} -pie
+endif
+
+if RRR_WITH_GPIO
+rrr_gpio_SOURCES = rrr_gpio.c main.c
+rrr_gpio_CFLAGS = ${AM_CFLAGS} -fpie
+rrr_gpio_LDFLAGS = ${ldflags} -pie
 endif
 
 rrr_stats_SOURCES = rrr_stats.c main.c

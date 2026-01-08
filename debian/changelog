@@ -6,6 +6,7 @@ rrr (1.40-2) trixie; urgency=medium
 
   * Features:
     * The rrr_sub MQTT utility supports nice print of JSON messages
+    * New module for GPIO control
 
  -- Atle Solbakken <atle@goliathdns.no>  Thu, 18 Dec 2025 09:30:54 +0100
 

@@ -44,6 +44,15 @@ librrrartnet_la_LIBS = ${ARTNET_LIBS}
 artnet_extra_ld = ${ARTNET_LDFLAGS} ${ARTNET_LIBS}
 endif
 
+if RRR_WITH_GPIO
+libadd_gpio = librrrgpio.la
+librrrgpio_la_SOURCES = gpio/rrr_gpio.c
+librrrgpio_la_CFLAGS = ${GPIO_CFLAGS} 
+librrrgpio_la_LDFLAGS = ${GPIO_LDFLAGS}
+librrrgpio_la_LIBS = ${GPIO_LIBS}
+gpio_extra_ld = ${GPIO_LDFLAGS} ${GPIO_LIBS}
+endif
+
 if RRR_WITH_LUA
 libadd_lua = librrrlua.la
 librrrlua_la_SOURCES = lua/lua.c \
@@ -217,6 +226,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
                     ${crypto_extra_ld} \
                     ${openssl_extra_ld} \
 		    ${artnet_extra_ld} \
+		    ${gpio_extra_ld} \
                     ${libressl_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
@@ -287,6 +297,7 @@ libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
     ${libadd_artnet}                 \
+    ${libadd_gpio}                   \
     ${libadd_lua}                    \
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \
