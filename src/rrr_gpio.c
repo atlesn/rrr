@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/allocator.h"
 #include "lib/rrr_strerror.h"
 #include "lib/cmdlineparser/cmdline.h"
+#include "lib/util/posix.h"
 
 #include "lib/gpio/rrr_gpio.h"
 
@@ -58,6 +59,7 @@ int main(int argc, const char **argv, const char **env) {
 	uint64_t line_offset;
 	int value;
 	struct cmd_data cmd;
+	struct rrr_gpio_ctx *ctx = NULL;
 
 	if (rrr_allocator_init() != 0) {
 		ret = EXIT_FAILURE;
@@ -110,11 +112,28 @@ int main(int argc, const char **argv, const char **env) {
 		goto out_cleanup_signal;
 	}
 
-	if (rrr_gpio_set_line(chip_path, rrr_uint_from_biglength_bug_const(line_offset), value) != 0) {
+	if (rrr_gpio_set_line(&ctx, chip_path, rrr_uint_from_biglength_bug_const(line_offset), value) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
 
+	for (int i = 0; i < 5; i++) {
+		rrr_posix_usleep(1 * 1000 * 1000);
+		int value;
+		if (rrr_gpio_get_line(&ctx, &value, chip_path, rrr_uint_from_biglength_bug_const(line_offset)) != 0) {
+			ret = EXIT_FAILURE;
+			goto out_destroy_ctx;
+		}
+		printf("Value is %i\n", value);
+		if (rrr_gpio_set_line(&ctx, chip_path, rrr_uint_from_biglength_bug_const(line_offset), !value) != 0) {
+			ret = EXIT_FAILURE;
+			goto out_cleanup_signal;
+		}
+		printf("Set to %i\n", !value);
+	}
+
+	out_destroy_ctx:
+		rrr_gpio_ctx_destroy(&ctx);
 	out_cleanup_signal:
 		// rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		// rrr_signal_handler_remove(signal_handler);

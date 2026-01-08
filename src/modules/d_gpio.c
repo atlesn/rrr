@@ -48,6 +48,7 @@ struct gpio_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_poll_helper_counters counters;
 	char *chip;
+	struct rrr_gpio_ctx *ctx;
 };
 
 int gpio_data_init(struct gpio_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -61,6 +62,7 @@ int gpio_data_init(struct gpio_data *data, struct rrr_instance_runtime_data *thr
 void gpio_data_cleanup(void *arg) {
 	struct gpio_data *data = arg;
 	RRR_FREE_IF_NOT_NULL(data->chip);
+	rrr_gpio_ctx_destroy(&data->ctx);
 }
 
 static int gpio_process_cmd (
@@ -106,7 +108,7 @@ static int gpio_process_cmd (
 			value_str
 	);
 
-	if ((ret = rrr_gpio_set_line(data->chip, rrr_uint_from_biglength_bug_const(line), value)) != 0) {
+	if ((ret = rrr_gpio_set_line(&data->ctx, data->chip, rrr_uint_from_biglength_bug_const(line), value)) != 0) {
 		RRR_MSG_0("Failed to set line %luu on device %s to %s in gpio instance %s\n",
 			line, data->chip, value_str, INSTANCE_D_NAME(data->thread_data));
 		goto out;

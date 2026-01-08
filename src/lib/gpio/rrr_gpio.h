@@ -22,9 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_GPIO_H
 #define RRR_GPIO_H
 
-struct rrr_gpio_request;
+struct rrr_gpio_ctx;
 
-int rrr_gpio_set_line(struct rrr_gpio_request **request, const char *chip_path, unsigned int line_offset, int value);
-void rrr_gpio_request_destroy(struct rrr_gpio_request **request);
+int rrr_gpio_set_line(struct rrr_gpio_ctx **ctx, const char *chip_path, unsigned int line_offset, int value);
+int rrr_gpio_get_line(struct rrr_gpio_ctx **ctx, int *value, const char *chip_path, unsigned int line_offset);
+void rrr_gpio_ctx_destroy(struct rrr_gpio_ctx **ctx);
 
 #endif /* RRR_GPIO_H */
