@@ -28,6 +28,10 @@ Original code: Copyright 2023 Kent Gibson <warthog618@gmail.com>
 #include <gpiod.h>
 #include <errno.h>
 
+struct rrr_gpio_request {
+	struct gpiod_line_request *request;
+};
+
 static struct gpiod_line_request *__rrr_gpio_request_output_line (
 		const char *chip_path,
 		unsigned int offset,
