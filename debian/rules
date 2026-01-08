@@ -29,6 +29,10 @@ export RRR_DAEMON_USERNAME=rrr
 override_dh_missing:
 	dh_missing --list-missing
 
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		--with-artnet
+
 #override_dh_install:
 #	dh_install -X.la
 #	dh_missing --list-missing
