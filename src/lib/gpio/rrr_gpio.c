@@ -125,6 +125,7 @@ static void __rrr_gpio_device_destroy(struct rrr_gpio_device *device) {
 	rrr_free(device->chip);
 	if (device->request)
 		gpiod_line_request_release(device->request);
+	rrr_free(device);
 }
 
 static int __rrr_gpio_device_new(struct rrr_gpio_device **device, const char *chip) {

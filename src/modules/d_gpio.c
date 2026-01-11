@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 
 #define GPIO_TAG_LINE "gpio_line"
-#define GPIO_TAG_VALUE "gpio_value"
+#define GPIO_TAG_SET "gpio_set"
 
 struct gpio_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -82,8 +82,8 @@ static int gpio_process_cmd (
 		goto out;
 	}
 
-	if ((ret = rrr_array_get_value_str_by_tag (&value_str, array, GPIO_TAG_VALUE)) != 0) {
-		RRR_MSG_0("Warning: Failed to get value " GPIO_TAG_VALUE " in message to gpio instance %s\n",
+	if ((ret = rrr_array_get_value_str_by_tag (&value_str, array, GPIO_TAG_SET)) != 0) {
+		RRR_MSG_0("Warning: Failed to get value " GPIO_TAG_SET " in message to gpio instance %s\n",
 			INSTANCE_D_NAME(data->thread_data));
 		ret = 0;
 		goto out;
@@ -96,13 +96,13 @@ static int gpio_process_cmd (
 		value = 0;
 	}
 	else {
-		RRR_MSG_0("Warning: Unknown value '%s' for " GPIO_TAG_VALUE " in message to gpio instance %s\n",
+		RRR_MSG_0("Warning: Unknown value '%s' for " GPIO_TAG_SET " in message to gpio instance %s\n",
 			value_str, INSTANCE_D_NAME(data->thread_data));
 		ret = 0;
 		goto out;
 	}
 
-	RRR_DBG_3("gpio instance %s received command to set value of line '%ull' to '%s'\n",
+	RRR_DBG_3("gpio instance %s received command to set value of line '%llu' to '%s'\n",
 			INSTANCE_D_NAME(data->thread_data),
 			line,
 			value_str
