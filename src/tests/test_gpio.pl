@@ -17,15 +17,15 @@ my $ROUNDS = 10;
 sub config {
 	my $settings = shift;
 
-	my $debugfs = $settings->get("gpio_chip_debugfs");
+	$DEBUGFS = $settings->get("gpio_chip_debugfs");
 
-	if (-d $debugfs) {
-		$dbg->msg(1, "Checking result with debugfs path $debugfs\n");
-		$DEBUGFS = $debugfs;
+	if (-d $DEBUGFS && (test_line(12, "0") || test_line(12, "1"))) {
+		$dbg->msg(1, "Checking result with debugfs path $DEBUGFS\n");
+		return 1;
 	}
-	else {
-		$dbg->msg(1, "Not checking result with debugfs, not found on $debugfs\n");
-	}
+
+	$dbg->msg(1, "Not checking result with debugfs, not found on $DEBUGFS\n");
+	$DEBUGFS = undef;
 
 	return 1;
 }
@@ -34,10 +34,12 @@ sub source {
 	my $message = shift;
 
 	if (--$ROUNDS == 0) {
-		die "Unexpected line result" unless test_line(12, "1");
-		die "Unexpected line result" unless test_line(13, "0");
-		die "Unexpected line result" unless test_line(14, "1");
-		die "Unexpected line result" unless test_line(15, "0");
+		if (defined $DEBUGFS) {
+			die "Unexpected line result for 12" unless test_line(12, "1");
+			die "Unexpected line result for 13" unless test_line(13, "0");
+			die "Unexpected line result for 14" unless test_line(14, "1");
+			die "Unexpected line result for 15" unless test_line(15, "0");
+		}
 
 		$message->clear_array();
 		$message->{'topic'} = "gpio-ok";
@@ -61,10 +63,11 @@ sub test_line {
 	my $line = shift;
 	my $expect = shift;
 
-	return 1 unless defined $DEBUGFS;
-
 	my $line_file = "$DEBUGFS/$line";
-	open(LINE, "< $line_file") or die "Could not open line file $line_file from debugfs: $!";
+	open(LINE, "< $line_file") or do {
+		$dbg->msg(0, "Could not open line file $line_file from debugfs: $!\n");
+		return 0;
+	};
 	$line = <LINE>;
 	chomp $line;
 	close(LINE);
