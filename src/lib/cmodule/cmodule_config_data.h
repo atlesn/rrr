@@ -33,6 +33,7 @@ struct rrr_cmodule_config_data {
 
 	enum rrr_cmodule_process_mode process_mode;
 	int do_spawning;
+	int do_worker_fanout;
 	int do_drop_on_error;
 	int do_require_all_settings_used;
 
