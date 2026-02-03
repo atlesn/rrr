@@ -4227,9 +4227,16 @@ with the configuration paramenter prefix of the module.
 How many worker fork copies to spawn. If multiple forks are used, incoming messages will be given to
 the fork having the least amount of messages waiting to be processed. Note that if sourcing is used,
 each for will source messages according to given parameters. Defaults to 1, maximum is 16.
+If
+.B X_worker_fanout
+is used, messages will be delivered to all workers.
 
 If configuration for sub instances is used, this parameter may not be set, as the number of worker forks
 is then controlled by how many sub instances is defined. See next section for details about sub instances.
+
+.It X_worker_fanout={yes|no}
+If given and set to yes, enach message from a sender will be delivered to all workers.
+If a topic filter is set, this still applies to each worker individually.
 
 .It X_source_interval_ms=MILLISECONDS
 How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
@@ -4274,8 +4281,11 @@ Any number of costum configuration parameters may be set in each sub instance.
 
 Messages to sub instances are, as when plain multiple forks are used using
 .B X_workers,
-delivered to at most one sub instance. There is however possible to set a topic filter for each fork allowing
-routing of messages between different forks. Should no filter match a particular message, the message is dropped silently.
+delivered to at most one sub instance unless
+.B X_worker_fanout
+is set.
+It is possible to set a topic filter for each fork allowing routing of messages between different forks.
+Should no filter match a particular message, the message is dropped silently.
 
 The following configuration parameters are available in sub instances:
 
