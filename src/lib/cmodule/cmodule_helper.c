@@ -278,40 +278,61 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 	struct rrr_cmodule_worker *preferred = NULL;
 	int preferred_count = -1;
 
- 	WORKER_LOOP_BEGIN();
-		int does_match = 0;
+	if (cmodule->config_data.do_worker_fanout) {
+		WORKER_LOOP_BEGIN();
+			int does_match = 0;
 
-		if ((ret = __rrr_cmodule_helper_send_message_to_fork_topic_filter_check (
-				worker,
-				&does_match,
-				entry_locked
-		)) != 0) {
-			goto out;
-		}
-
-		if (does_match) {
-			int count = 0;
-			if ((ret = rrr_cmodule_channel_count(&count, worker->channel_to_fork)) != 0) {
+			if ((ret = __rrr_cmodule_helper_send_message_to_fork_topic_filter_check (
+					worker,
+					&does_match,
+					entry_locked
+			)) != 0) {
 				goto out;
 			}
-			if (preferred_count == -1 || count < preferred_count) {
-				preferred = worker;
-				preferred_count = count;
-			}
-		}
- 	WORKER_LOOP_END();
 
-	if (preferred == NULL) {
-		char *topic_tmp = NULL;
-		rrr_msg_msg_topic_get(&topic_tmp, (const struct rrr_msg_msg *) entry_locked->message);
-		RRR_DBG_2("Dropping message with topic '%s' in instance '%s', no sub instance accepts it\n",
-			topic_tmp, INSTANCE_D_NAME(thread_data));
-		RRR_FREE_IF_NOT_NULL(topic_tmp);
+			if (does_match) {
+				if ((ret = __rrr_cmodule_helper_send_message_to_fork(thread_data, worker, entry_locked)) != 0) {
+					goto out;
+				}
+			}
+		WORKER_LOOP_END();
 	}
 	else {
-		// TODO : Upon retry, send to other worker
-		if ((ret = __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked)) != 0) {
-			goto out;
+		WORKER_LOOP_BEGIN();
+			int does_match = 0;
+
+			if ((ret = __rrr_cmodule_helper_send_message_to_fork_topic_filter_check (
+					worker,
+					&does_match,
+					entry_locked
+			)) != 0) {
+				goto out;
+			}
+
+			if (does_match) {
+				int count = 0;
+				if ((ret = rrr_cmodule_channel_count(&count, worker->channel_to_fork)) != 0) {
+					goto out;
+				}
+				if (preferred_count == -1 || count < preferred_count) {
+					preferred = worker;
+					preferred_count = count;
+				}
+			}
+		WORKER_LOOP_END();
+
+		if (preferred == NULL) {
+			char *topic_tmp = NULL;
+			rrr_msg_msg_topic_get(&topic_tmp, (const struct rrr_msg_msg *) entry_locked->message);
+			RRR_DBG_2("Dropping message with topic '%s' in instance '%s', no sub instance accepts it\n",
+				topic_tmp, INSTANCE_D_NAME(thread_data));
+			RRR_FREE_IF_NOT_NULL(topic_tmp);
+		}
+		else {
+			// TODO : Upon retry, send to other worker
+			if ((ret = __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked)) != 0) {
+				goto out;
+			}
 		}
 	}
 
@@ -1082,6 +1103,9 @@ int rrr_cmodule_helper_parse_config (
 			goto out;
 		}
 	}
+
+	RRR_INSTANCE_CONFIG_STRING_SET("_worker_fanout");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_worker_fanout, 0);
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_drop_on_error");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_drop_on_error, 0);
