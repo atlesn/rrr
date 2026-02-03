@@ -630,7 +630,6 @@ static void __rrr_http_application_http2_polite_close (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 	rrr_http2_transport_ctx_terminate(http2->http2_session, handle);
-	assert(0);
 }
 
 static const struct rrr_http_application_constants rrr_http_application_http2_constants = {
