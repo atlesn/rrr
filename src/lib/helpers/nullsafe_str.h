@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2026 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -160,6 +160,10 @@ int rrr_nullsafe_str_str_raw (
 int rrr_nullsafe_str_begins_with (
 		const struct rrr_nullsafe_str *str,
 		const struct rrr_nullsafe_str *substr
+);
+int rrr_nullsafe_str_begins_with_chr (
+		const struct rrr_nullsafe_str *str,
+		char chr
 );
 int rrr_nullsafe_str_dup (
 		struct rrr_nullsafe_str **target,

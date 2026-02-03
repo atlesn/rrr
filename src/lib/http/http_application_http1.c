@@ -526,6 +526,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 					rrr_length_from_biglength_bug_const(read_session->rx_overshoot_size),
 					transaction,
 					0, // Is not server
+					receive_data->http1->debug_name,
 					&receive_data->http1->callbacks
 			);
 
@@ -782,6 +783,7 @@ static int __rrr_http_application_http1_request_upgrade_try_http2 (
 			rrr_length_from_biglength_bug_const(read_session->rx_overshoot_size),
 			transaction,
 			1, // Is server
+			receive_data->http1->debug_name,
 			&receive_data->http1->callbacks
 	);
 
@@ -1139,10 +1141,12 @@ static int __rrr_http_application_http1_receive_get_target_size (
 				goto out;
 			}
 
-			RRR_DBG_3("HTTP2 magic found, upgrading to native HTTP2 with %llu bytes read so far\n", (long long int) read_session->rx_buf_wpos);
+			RRR_DBG_3("HTTP2 [%s] magic found, upgrading to native HTTP2 with %llu bytes read so far\n",
+				receive_data->http1->debug_name, (long long int) read_session->rx_buf_wpos);
 			if ((ret = rrr_http_application_http2_new (
 					receive_data->upgraded_application,
 					1, // Is server
+					receive_data->http1->debug_name,
 					(void **) &read_session->rx_buf_ptr,
 					rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos),
 					&receive_data->http1->callbacks
@@ -1716,6 +1720,7 @@ static const struct rrr_http_application_constants rrr_http_application_http1_co
 
 int rrr_http_application_http1_new (
 		struct rrr_http_application **target,
+		const char *debug_name,
 		const struct rrr_http_application_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -1730,6 +1735,7 @@ int rrr_http_application_http1_new (
 
 	memset(result, '\0', sizeof(*result));
 
+	result->debug_name = debug_name;
 	result->constants = &rrr_http_application_http1_constants;
 	result->callbacks = *callbacks;
 

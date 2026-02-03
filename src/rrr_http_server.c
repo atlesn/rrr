@@ -542,6 +542,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (rrr_http_server_new (
 			&http_server,
+			"httpserver",
 			&callbacks
 	) != 0) {
 		ret = EXIT_FAILURE;

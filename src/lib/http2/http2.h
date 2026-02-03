@@ -64,7 +64,8 @@ int rrr_http2_session_new_or_reset (
 		struct rrr_http2_session **target,
 		void **initial_receive_data,
 		rrr_length initial_receive_data_len,
-		int is_server
+		int is_server,
+		const char *debug_name
 );
 void rrr_http2_session_destroy_if_not_null (
 		struct rrr_http2_session **target

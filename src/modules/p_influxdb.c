@@ -215,6 +215,7 @@ static void influxdb_send_data_callback (
 			RRR_HTTP_APPLICATION_HTTP1,
 			handle,
 			RRR_HTTP_CLIENT_USER_AGENT,
+			INSTANCE_D_NAME(data->thread_data),
 			NULL,
 			influxdb_receive_http_response,
 			NULL, /* Failure callback, not implemented in InfluxDB) */

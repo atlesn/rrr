@@ -103,6 +103,7 @@ struct rrr_http_application_constants {
 
 #define RRR_HTTP_APPLICATION_HEAD                              \
     const struct rrr_http_application_constants *constants;    \
+    const char *debug_name;                                    \
     struct rrr_http_application_callbacks callbacks
 
 struct rrr_http_application {

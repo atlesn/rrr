@@ -64,6 +64,8 @@ struct rrr_http_client {
 	uint64_t idle_timeout_ms;
 	rrr_length send_chunk_count_limit;
 
+	const char *debug_name;
+
 	struct rrr_http_rules rules;
 
 	struct rrr_net_transport *transport_keepalive_plain;
@@ -81,6 +83,7 @@ int rrr_http_client_new (
 		struct rrr_event_queue *events,
 		uint64_t idle_timeout_ms,
 		rrr_length send_chunk_count_limit,
+		const char *debug_name,
 		const struct rrr_http_client_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -99,6 +102,7 @@ int rrr_http_client_new (
 	client->idle_timeout_ms = idle_timeout_ms;
 	client->callbacks = *callbacks;
 	client->send_chunk_count_limit = send_chunk_count_limit;
+	client->debug_name = debug_name;
 
 	*target = client;
 
@@ -898,6 +902,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			callback_data->transaction->application_type,
 			handle,
 			callback_data->data->user_agent,
+			callback_data->http_client->debug_name,
 			__rrr_http_client_websocket_handshake_callback,
 			__rrr_http_client_receive_http_part_callback,
 			__rrr_http_client_request_failure_callback,

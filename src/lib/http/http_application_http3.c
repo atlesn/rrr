@@ -1687,6 +1687,7 @@ static void __rrr_http_application_http3_vprintf (const char *format, va_list ar
 int rrr_http_application_http3_new (
 		struct rrr_http_application **result,
 		int is_server,
+		const char *debug_name,
 		const struct rrr_http_application_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -1735,6 +1736,7 @@ int rrr_http_application_http3_new (
 	(void)(__rrr_http_application_http3_vprintf);
 #endif
 
+	http3->debug_name = debug_name;
 	http3->constants = &rrr_http_application_http3_constants;
 	http3->callbacks = *callbacks;
 	http3->is_server = is_server;

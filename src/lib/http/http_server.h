@@ -47,6 +47,8 @@ struct rrr_http_server {
 	struct rrr_http_rules rules;
 
 	int shutdown_started;
+
+	const char *debug_name;
 };
 
 void rrr_http_server_destroy (
@@ -57,6 +59,7 @@ void rrr_http_server_destroy_void (
 );
 int rrr_http_server_new (
 		struct rrr_http_server **target,
+		const char *debug_name,
 		const struct rrr_http_server_callbacks *callbacks
 );
 void rrr_http_server_set_no_body_parse (

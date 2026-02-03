@@ -63,22 +63,23 @@ int rrr_http_application_new (
 		struct rrr_http_application **target,
 		enum rrr_http_application_type type,
 		int is_server,
+		const char *debug_name,
 		const struct rrr_http_application_callbacks *callbacks
 ) {
 #if !defined(RRR_WITH_NGHTTP2) && !defined(RRR_WITH_HTTP3)
 	(void)(is_server);
 #endif
 	if (type == RRR_HTTP_APPLICATION_HTTP1) {
-		return rrr_http_application_http1_new(target, callbacks);
+		return rrr_http_application_http1_new(target, debug_name, callbacks);
 	}
 #ifdef RRR_WITH_NGHTTP2
 	else if (type == RRR_HTTP_APPLICATION_HTTP2) {
-		return rrr_http_application_http2_new(target, is_server, NULL, 0, callbacks);
+		return rrr_http_application_http2_new(target, is_server, debug_name, NULL, 0, callbacks);
 	}
 #endif
 #ifdef RRR_WITH_HTTP3
 	else if (type == RRR_HTTP_APPLICATION_HTTP3) {
-		return rrr_http_application_http3_new(target, is_server, callbacks);
+		return rrr_http_application_http3_new(target, is_server, debug_name, callbacks);
 	}
 #endif
 	RRR_BUG("BUG: Unknown application type %i to rrr_http_application_new\n", type);

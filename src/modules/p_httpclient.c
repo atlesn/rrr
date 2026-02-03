@@ -2814,6 +2814,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			INSTANCE_D_EVENTS(thread_data),
 			RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
 			RRR_HTTPCLIENT_SEND_CHUNK_COUNT_LIMIT,
+			INSTANCE_D_NAME(thread_data),
 			&callbacks
 	) != 0) {
 		goto out_message;
