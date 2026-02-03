@@ -942,7 +942,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 				ret = 0;
 				goto out;
 			}
-			RRR_MSG_0("Error %i from query prepare callback in %a\n", ret, __func__);
+			RRR_MSG_0("Error %i from query prepare callback in %s\n", ret, __func__);
 			goto out;
 		}
 	}
@@ -959,7 +959,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		else {
 			RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 			if ((endpoint_to_free = rrr_strdup("/")) == NULL) {
-				RRR_MSG_0("Could not allocate memory for endpoint in %s\n");
+				RRR_MSG_0("Could not allocate memory for endpoint in %s\n", __func__);
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
 			}

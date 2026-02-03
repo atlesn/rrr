@@ -957,7 +957,7 @@ static int __rrr_stats_engine_push_rrr_message (
 	uint16_t write_amount = 0;
 
 	if ((ret = rrr_msg_stats_duplicate(&preface_copy, message_preface)) != 0) {
-		RRR_MSG_0("Could not duplicate preface in %s\n");
+		RRR_MSG_0("Could not duplicate preface in %s\n", __func__);
 		goto out;
 	}
 

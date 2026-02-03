@@ -1280,7 +1280,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 	else if (modbus_function == RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS) {
 		if (!rrr_array_has_tag(&array, modbus_field_quantity)) {
-			RRR_MSG_0("Warning: Failed to get value of field 'modbus_quantity' of command message to modbus instance %s\n",
+			RRR_MSG_0("Warning: Failed to get value of field '%s' of command message to modbus instance %s\n",
 				modbus_field_quantity, INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
 			goto drop;

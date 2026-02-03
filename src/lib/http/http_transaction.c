@@ -372,7 +372,7 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 
 		service_last->expire_time = rrr_time_get_64() + expiration * 1000 * 1000;
 
-		RRR_DBG_3("HTTP alt-svc absolute expiration is %llu (from %llu)\n", service_last->expire_time, expiration);
+		RRR_DBG_3("HTTP alt-svc absolute expiration is %" PRIu64 " (from %llu)\n", service_last->expire_time, expiration);
 	}
 	else if (strcmp(name_tmp, "persist") == 0) {
 		if (!service_last) {

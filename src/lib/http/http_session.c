@@ -177,7 +177,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		if (user_agent != NULL && *user_agent != '\0') {
 			session->user_agent = rrr_strdup(user_agent);
 			if (session->user_agent == NULL) {
-				RRR_MSG_0("Could not allocate memory for user agent in %s\n");
+				RRR_MSG_0("Could not allocate memory for user agent in %s\n", __func__);
 				ret = 1;
 				goto out_destroy_session;
 			}

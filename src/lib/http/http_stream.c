@@ -82,7 +82,7 @@ void rrr_http_stream_collection_destroy (
 		// stream ID is correct and will actually be sent.
 		RRR_HTTP_STREAMS_ITERATE_ACTIVE_BEGIN();
 			uint64_t age_ms = (rrr_time_get_64() - node->creation_time) / 1000;
-			RRR_DBG_3("http stream id %i late destroy (upon collection destruction), age is %" PRIu64 "ms\n",
+			RRR_DBG_3("http stream id %" PRIi64 " late destroy (upon collection destruction), age is %" PRIu64 "ms\n",
 					collection->stream_ids[i], age_ms);
 		RRR_HTTP_STREAMS_ITERATE_END();
 	}

@@ -1367,7 +1367,7 @@ int rrr_msgdb_server_new (
 	memset(server, '\0', sizeof(*server));
 
 	if ((server->directory = rrr_strdup(directory)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for directory in %S\n", __func__);
+		RRR_MSG_0("Could not allocate memory for directory in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}

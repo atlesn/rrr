@@ -123,6 +123,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	else
 #		define RRR_BUG(...) do {fprintf(stderr, __VA_ARGS__); assert(0);}while(0)
 #	endif
+#	define RRR_ABORT(...) do { fprintf(stderr, __VA_ARGS__); abort(); } while (0)
 #else
 
 #	define RRR_MSG_LOC(...) \

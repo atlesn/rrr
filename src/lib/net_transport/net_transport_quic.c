@@ -2283,7 +2283,7 @@ static int __rrr_net_transport_quic_connect (
 		ret = 0;
 	}
 	else {
-		RRR_MSG_0("net transport quic connection to %s:%u failed\n");
+		RRR_MSG_0("net transport quic connection to %s:%u failed\n", host, port);
 		ret = 1;
 		goto out;
 	}
@@ -2798,10 +2798,12 @@ static int __rrr_net_transport_quic_process_migration (
 			__rrr_net_transport_quic_ctx_report_migration (ctx);
 			break;
 		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_NONE:
-			RRR_BUG("Migration mode %i NONE or VALIDATION cannot be used explicitly in %s\n", __func__);
+			RRR_BUG("Migration mode %i NONE or VALIDATION cannot be used explicitly in %s\n",
+				ctx->path_migration_mode, __func__);
 			break;
 		default:
-			RRR_BUG("Migration mode %i node implemented in %s\n", __func__);
+			RRR_BUG("Migration mode %i node implemented in %s\n",
+				ctx->path_migration_mode, __func__);
 			break;
 	};
 
@@ -2997,7 +2999,7 @@ static int __rrr_net_transport_quic_receive (
 
 	uint8_t flags = * (uint8_t *) datagram->msg_iov.iov_base;
 
-	RRR_DBG_7("net transport quic fd %i h %i receive datagram size %llu max %llu flags %u\n",
+	RRR_DBG_7("net transport quic fd %i h %i receive datagram size %llu max %llu flags %lu\n",
 		ctx->fd,
 		ctx->connected_handle,
 		(unsigned long long) datagram->msg_len,
@@ -3213,7 +3215,7 @@ static int __rrr_net_transport_quic_stream_consume (
 
 	int ret_tmp;
 
-	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " consume %llu bytes\n",
+	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " consume %zu bytes\n",
 		handle_data->ctx->fd, handle->handle, stream_id, consumed);
 
 	if ((ret_tmp = ngtcp2_conn_extend_max_stream_offset(handle_data->ctx->conn, stream_id, consumed)) != 0) {
@@ -3387,7 +3389,7 @@ static int __rrr_net_transport_quic_migrate (
 		ret = 0;
 	}
 	else {
-		RRR_MSG_0("net transport quic connection to %s:%u failed\n");
+		RRR_MSG_0("net transport quic connection to %s:%u failed\n", host, port);
 		ret = 1;
 		goto out;
 	}
