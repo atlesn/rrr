@@ -289,6 +289,80 @@ static int __rrr_http2_on_stream_close_callback (
 	return ret;
 }
 
+// Library documents that length is no more than 16KiB
+static ssize_t __rrr_http2_data_source_read_callback (
+		nghttp2_session *nghttp2_session,
+		int32_t stream_id,
+		uint8_t *buf,
+		size_t length,
+		uint32_t *data_flags,
+		nghttp2_data_source *source,
+		void *user_data
+) {
+	struct rrr_http2_session *session = user_data;
+
+	(void)(nghttp2_session);
+	(void)(source);
+
+	rrr_biglength bytes_written = 0;
+	*data_flags = 0;
+
+	int done = 0;
+	if (session->callback_data.data_source_callback (
+			&done,
+			&bytes_written,
+			buf,
+			length,
+			stream_id,
+			session->callback_data.callback_arg
+	) != 0) {
+		return NGHTTP2_ERR_CALLBACK_FAILURE;
+	}
+
+	RRR_DBG_7("http2 [%s] source read callback %" PRIrrrbl " bytes done %i\n",
+		session->debug_name, bytes_written, done);
+
+	if (bytes_written > SSIZE_MAX) {
+		RRR_BUG("Bug: Size overflow in __rrr_http2_data_source_read_callback: %" PRIrrrbl ">%llu\n",
+			bytes_written, (unsigned long long) SSIZE_MAX);
+	}
+
+	if (done) {
+		*data_flags = NGHTTP2_DATA_FLAG_EOF;
+	}
+
+	return (ssize_t) bytes_written;
+}
+
+static int __rrr_http2_data_submit_if_needed (
+		struct rrr_http2_session *session,
+		struct rrr_http_stream *stream,
+		int32_t stream_id
+) {
+	int ret = 0;
+
+	if (!stream->data_submission_requested) {
+		goto out;
+	}
+	stream->data_submission_requested = 0;
+
+	nghttp2_data_provider data_provider = {
+			{ 0 },
+			__rrr_http2_data_source_read_callback
+	};
+
+	// Note that the final source read callback is set in the tick() function
+
+	if ((ret = nghttp2_submit_data(session->session, NGHTTP2_FLAG_END_STREAM, stream_id, &data_provider)) != 0) {
+		RRR_MSG_0 ("HTTP2 [%s] data submission failed: %s\n", session->debug_name, nghttp2_strerror(ret));
+		ret = RRR_HTTP2_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_http2_on_frame_send_callback (
 		nghttp2_session *nghttp2_session,
 		const nghttp2_frame *frame,
@@ -298,22 +372,30 @@ static int __rrr_http2_on_frame_send_callback (
 
 	(void)(nghttp2_session);
 
-	struct rrr_http_stream *stream = __rrr_http2_stream_find(session, frame->hd.stream_id);
-
 	if (frame->hd.type == NGHTTP2_HEADERS || frame->hd.type == NGHTTP2_DATA) {
+		struct rrr_http_stream *stream = __rrr_http2_stream_find(session, frame->hd.stream_id);
+		if ((stream = __rrr_http2_stream_find(session, frame->hd.stream_id)) == NULL) {
+			RRR_DBG_7("http2 [%s] unknown stream %u in %s\n",
+				session->debug_name, frame->hd.stream_id, __func__);
+			return NGHTTP2_ERR_CALLBACK_FAILURE;
+		}
+
 		if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
 			RRR_DBG_3("http2 [%s] send frame type %" PRIu8 " stream %" PRIi32 " with end stream set\n",
 				session->debug_name, frame->hd.type, frame->hd.stream_id);
-			if (stream != NULL)
-				stream->flags |= RRR_HTTP_DATA_SEND_FLAG_IS_STREAM_CLOSE;
+			stream->flags |= RRR_HTTP_DATA_SEND_FLAG_IS_STREAM_CLOSE;
 			return 0;
 		}
 
 		if (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) {
 			RRR_DBG_3("http2 [%s] send frame type %" PRIu8 " stream %" PRIi32 " with end headers set\n",
 				session->debug_name, frame->hd.type, frame->hd.stream_id);
-			if (stream != NULL)
-				stream->flags |= RRR_HTTP_DATA_SEND_FLAG_IS_HEADERS_END;
+			stream->flags |= RRR_HTTP_DATA_SEND_FLAG_IS_HEADERS_END;
+
+			if (__rrr_http2_data_submit_if_needed(session, stream, frame->hd.stream_id) != 0) {
+				return NGHTTP2_ERR_CALLBACK_FAILURE;
+			}
+
 			return 0;
 		}
 	}
@@ -522,80 +604,6 @@ static int __rrr_http2_error_callback (
 	return 0;
 }
 
-// Library documents that length is no more than 16KiB
-static ssize_t __rrr_http2_data_source_read_callback (
-		nghttp2_session *nghttp2_session,
-		int32_t stream_id,
-		uint8_t *buf,
-		size_t length,
-		uint32_t *data_flags,
-		nghttp2_data_source *source,
-		void *user_data
-) {
-	struct rrr_http2_session *session = user_data;
-
-	(void)(nghttp2_session);
-	(void)(source);
-
-	rrr_biglength bytes_written = 0;
-	*data_flags = 0;
-
-	int done = 0;
-	if (session->callback_data.data_source_callback (
-			&done,
-			&bytes_written,
-			buf,
-			length,
-			stream_id,
-			session->callback_data.callback_arg
-	) != 0) {
-		return NGHTTP2_ERR_CALLBACK_FAILURE;
-	}
-
-	RRR_DBG_7("http2 [%s] source read callback %" PRIrrrbl " bytes done %i\n",
-		session->debug_name, bytes_written, done);
-
-	if (bytes_written > SSIZE_MAX) {
-		RRR_BUG("Bug: Size overflow in __rrr_http2_data_source_read_callback: %" PRIrrrbl ">%llu\n",
-			bytes_written, (unsigned long long) SSIZE_MAX);
-	}
-
-	if (done) {
-		*data_flags = NGHTTP2_DATA_FLAG_EOF;
-	}
-
-	return (ssize_t) bytes_written;
-}
-
-static int __rrr_http2_data_submit_if_needed (
-		struct rrr_http2_session *session,
-		struct rrr_http_stream *stream,
-		int32_t stream_id
-) {
-	int ret = 0;
-
-	if (!stream->data_submission_requested) {
-		goto out;
-	}
-	stream->data_submission_requested = 0;
-
-	nghttp2_data_provider data_provider = {
-			{ 0 },
-			__rrr_http2_data_source_read_callback
-	};
-
-	// Note that the final source read callback is set in the tick() function
-
-	if ((ret = nghttp2_submit_data(session->session, NGHTTP2_FLAG_END_STREAM, stream_id, &data_provider)) != 0) {
-		RRR_MSG_0 ("HTTP2 [%s] data submission failed: %s\n", session->debug_name, nghttp2_strerror(ret));
-		ret = RRR_HTTP2_SOFT_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 static int __rrr_http2_before_frame_send_callback (
 		nghttp2_session *nghttp2_session,
 		const nghttp2_frame *frame,
@@ -610,23 +618,6 @@ static int __rrr_http2_before_frame_send_callback (
 	RRR_DBG_7 ("http2 [%s] sending frame type %" PRIu8 " stream %" PRIi32 " length %llu\n",
 		session->debug_name, frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length);
 
-	if (frame->hd.type != NGHTTP2_HEADERS) {
-		goto out;
-	}
-
-	struct rrr_http_stream *stream = __rrr_http2_stream_find(session, frame->hd.stream_id);
-	if (stream == NULL) {
-		RRR_DBG_7("http2 [%s] unknown stream %u in before_frame_send_callback\n",
-			session->debug_name, frame->hd.stream_id);
-		return NGHTTP2_ERR_CALLBACK_FAILURE;
-	}
-
-	if ((ret = __rrr_http2_data_submit_if_needed(session, stream, frame->hd.stream_id)) != 0) {
-		ret = NGHTTP2_ERR_CALLBACK_FAILURE;
-		goto out;
-	}
-
-	out:
 	return ret;
 }
 
@@ -1020,30 +1011,6 @@ int rrr_http2_headers_end (
 		int32_t stream_id
 ) {
 	return __rrr_http2_session_stream_headers_submit(session, stream_id);
-}
-
-int rrr_http2_response_submit (
-		struct rrr_http2_session *session,
-		int32_t stream_id
-) {
-	int ret = 0;
-
-	nghttp2_data_provider data_provider = {
-			{ 0 },
-			__rrr_http2_data_source_read_callback
-	};
-
-	// Note that the final source read callback is set in the tick() function
-
-	if ((ret = nghttp2_submit_response(session->session, stream_id, NULL, 0, &data_provider)) != 0) {
-		RRR_MSG_0 ("[%s] HTTP2 response submission failed: %s",
-			session->debug_name, nghttp2_strerror(ret));
-		ret = RRR_HTTP2_SOFT_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
 }
 
 int rrr_http2_data_submission_request_set (

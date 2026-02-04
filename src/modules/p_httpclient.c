@@ -1148,7 +1148,7 @@ static int httpclient_transaction_field_add (
 
 	RRR_DBG_3("HTTP add array value with tag '%s' type '%s'\n",
 			(tag_to_use != NULL ? tag_to_use : "(no tag)"), value->definition->identifier);
-abort();
+
 	if ((ret = rrr_http_transaction_query_field_add (
 			transaction,
 			NULL,
