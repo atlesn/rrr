@@ -290,7 +290,7 @@ static int __rrr_http2_on_stream_close_callback (
 }
 
 // Library documents that length is no more than 16KiB
-static ssize_t __rrr_http2_data_source_read_callback (
+static nghttp2_ssize __rrr_http2_data_source_read_callback (
 		nghttp2_session *nghttp2_session,
 		int32_t stream_id,
 		uint8_t *buf,
@@ -331,7 +331,7 @@ static ssize_t __rrr_http2_data_source_read_callback (
 		*data_flags = NGHTTP2_DATA_FLAG_EOF;
 	}
 
-	return (ssize_t) bytes_written;
+	return (nghttp2_ssize) bytes_written;
 }
 
 static int __rrr_http2_data_submit_if_needed (
@@ -346,14 +346,14 @@ static int __rrr_http2_data_submit_if_needed (
 	}
 	stream->data_submission_requested = 0;
 
-	nghttp2_data_provider data_provider = {
+	nghttp2_data_provider2 data_provider = {
 			{ 0 },
 			__rrr_http2_data_source_read_callback
 	};
 
 	// Note that the final source read callback is set in the tick() function
 
-	if ((ret = nghttp2_submit_data(session->session, NGHTTP2_FLAG_END_STREAM, stream_id, &data_provider)) != 0) {
+	if ((ret = nghttp2_submit_data2(session->session, NGHTTP2_FLAG_END_STREAM, stream_id, &data_provider)) != 0) {
 		RRR_MSG_0 ("HTTP2 [%s] data submission failed: %s\n", session->debug_name, nghttp2_strerror(ret));
 		ret = RRR_HTTP2_SOFT_ERROR;
 		goto out;
