@@ -174,20 +174,20 @@ int rrr_net_transport_config_parse (
 
 	if (disallowed_transports & RRR_NET_TRANSPORT_F_PLAIN) {
 		RRR_MSG_0("Plain transport type specified in %s_transport_type but type is not allowed in instance %s\n",
-			prefix);
+			prefix, __func__);
 		ret = 1;
 	}
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 	if (disallowed_transports & RRR_NET_TRANSPORT_F_TLS) {
 		RRR_MSG_0("TLS transport type specified in %s_transport_type but type is not allowed in instance %s\n",
-			prefix);
+			prefix, __func__);
 		ret = 1;
 	}
 #endif
 #if defined(RRR_WITH_HTTP3)
 	if (disallowed_transports & RRR_NET_TRANSPORT_F_QUIC) {
 		RRR_MSG_0("QUIC transport type specified in %s_transport_type but type is not allowed in instance %s\n",
-			prefix);
+			prefix, __func__);
 		ret = 1;
 	}
 #endif

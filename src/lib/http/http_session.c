@@ -132,6 +132,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		enum rrr_http_application_type application_type,
 		struct rrr_net_transport_handle *handle,
 		const char *user_agent,
+		const char *debug_name,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		int (*failure_callback)(RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS),
@@ -167,6 +168,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 				&session->application,
 				application_type,
 				0, // Is not server
+				debug_name,
 				&callbacks
 		)) != 0) {
 			goto out_destroy_session;
@@ -175,7 +177,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		if (user_agent != NULL && *user_agent != '\0') {
 			session->user_agent = rrr_strdup(user_agent);
 			if (session->user_agent == NULL) {
-				RRR_MSG_0("Could not allocate memory for user agent in %s\n");
+				RRR_MSG_0("Could not allocate memory for user agent in %s\n", __func__);
 				ret = 1;
 				goto out_destroy_session;
 			}

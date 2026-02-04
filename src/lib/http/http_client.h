@@ -135,6 +135,7 @@ int rrr_http_client_new (
 		struct rrr_event_queue *events,
 		uint64_t idle_timeout_ms,
 		rrr_length send_chunk_count_limit,
+		const char *debug_name,
 		const struct rrr_http_client_callbacks *callbacks
 );
 void rrr_http_client_destroy (

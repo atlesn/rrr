@@ -109,7 +109,7 @@ static int gpio_process_cmd (
 	);
 
 	if ((ret = rrr_gpio_set_line(&data->ctx, data->chip, rrr_uint_from_biglength_bug_const(line), value)) != 0) {
-		RRR_MSG_0("Failed to set line %luu on device %s to %s in gpio instance %s\n",
+		RRR_MSG_0("Failed to set line %llu on device %s to %s in gpio instance %s\n",
 			line, data->chip, value_str, INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}

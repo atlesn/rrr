@@ -112,6 +112,7 @@ int rrr_http_application_new (
 		struct rrr_http_application **target,
 		enum rrr_http_application_type type,
 		int is_server,
+		const char *debug_name,
 		const struct rrr_http_application_callbacks *callbacks
 );
 int rrr_http_application_transport_ctx_request_send_possible (

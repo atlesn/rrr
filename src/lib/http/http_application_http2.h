@@ -35,6 +35,7 @@ void rrr_http_application_http2_alpn_protos_get (
 int rrr_http_application_http2_new (
 		struct rrr_http_application **target,
 		int is_server,
+		const char *debug_name,
 		void **initial_receive_data,
 		rrr_length initial_receive_data_len,
 		const struct rrr_http_application_callbacks *callbacks
@@ -45,6 +46,7 @@ int rrr_http_application_http2_new_from_upgrade (
 		rrr_length initial_receive_data_len,
 		struct rrr_http_transaction *transaction,
 		int is_server,
+		const char *debug_name,
 		const struct rrr_http_application_callbacks *callbacks
 );
 int rrr_http_application_http2_response_submit (

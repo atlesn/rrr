@@ -169,10 +169,22 @@ static int __rrr_http_application_http2_request_send_preliminary_callback (
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 	struct rrr_http_application_http2 *http2 = callback_data->app;
 
+	char *tmp = NULL;
+
 	(void)(method);
 	(void)(upgrade_mode);
 	(void)(protocol_version);
 	(void)(request_part);
+
+	if (!rrr_nullsafe_str_begins_with_chr(request, '/')) {
+		if (rrr_nullsafe_str_extract_append_null(&tmp, request) != 0) {
+			RRR_BUG("Failed to produce temporary string in %s\n", __func__);
+		}
+		RRR_MSG_0("Warning: HTTP2 [%s] request URL '%s' did not begin with a slash /, this is a protocol violation\n",
+			http2->debug_name, tmp);
+	}
+
+	RRR_FREE_IF_NOT_NULL(tmp);
 
 	return __rrr_http_application_http2_header_submit_nullsafe(http2, callback_data->stream_id, ":path", request);
 }
@@ -221,7 +233,7 @@ static int __rrr_http_application_http2_request_send (
 
 		if (selected_proto == NULL || strcmp("h2", selected_proto) != 0) {
 			RRR_DBG_3("HTTP2 downgrading to HTTP1 as TLS ALPN negotiation failed\n");
-			if ((ret = rrr_http_application_http1_new(&http1, &http2->callbacks)) != 0) {
+			if ((ret = rrr_http_application_http1_new(&http1, http2->debug_name, &http2->callbacks)) != 0) {
 				goto out;
 			}
 
@@ -352,7 +364,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 	if (is_server) {
 		if (transaction == NULL) {
-			RRR_DBG_3("HTTP2 stream [%" PRIi64 "] data receive callback server new transaction\n", stream_id);
+			RRR_DBG_3("HTTP2 stream [%" PRIi32 "] data receive callback server new transaction\n", stream_id);
 
 			if ((ret = rrr_http_transaction_new (
 					&transaction_to_destroy,
@@ -382,13 +394,13 @@ static int __rrr_http_application_http2_data_receive_callback (
 			transaction = transaction_to_destroy;
 		}
 		else {
-			RRR_DBG_3("HTTP2 stream [%" PRIi64 "] data receive callback server existing transaction\n", stream_id);
+			RRR_DBG_3("HTTP2 stream [%" PRIi32 "] data receive callback server existing transaction\n", stream_id);
 		}
 
 		rrr_http_transaction_stream_flags_add(transaction, flags);
 
 		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_SEND_FLAG_IS_HEADERS_END)) {
-			RRR_DBG_3("HTTP2 stream [%" PRIi64 "] send headers end\n",
+			RRR_DBG_3("HTTP2 stream [%" PRIi32 "] send headers end\n",
 				stream_id);
 			goto out;
 		}
@@ -396,7 +408,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
 	}
 	else {
-		RRR_DBG_3("HTTP2 stream [%" PRIi64 "] data receive callback client\n", stream_id);
+		RRR_DBG_3("HTTP2 stream [%" PRIi32 "] data receive callback client\n", stream_id);
 
 		rrr_http_transaction_stream_flags_add(transaction, flags);
 
@@ -637,6 +649,7 @@ static int __rrr_http_application_http2_new (
 		void **initial_receive_data,
 		rrr_length initial_receive_data_len,
 		int is_server,
+		const char *debug_name,
 		const struct rrr_http_application_callbacks *callbacks
 ) {
 	struct rrr_http_application_http2 *result = NULL;
@@ -655,11 +668,13 @@ static int __rrr_http_application_http2_new (
 			&result->http2_session,
 			initial_receive_data,
 			initial_receive_data_len,
-			is_server
+			is_server,
+			debug_name
 	)) != 0) {
 		goto out_destroy;
 	}
 
+	result->debug_name = debug_name;
 	result->constants = &rrr_http_application_http2_constants;
 	result->callbacks = *callbacks;
 
@@ -675,13 +690,21 @@ static int __rrr_http_application_http2_new (
 int rrr_http_application_http2_new (
 		struct rrr_http_application **target,
 		int is_server,
+		const char *debug_name,
 		void **initial_receive_data,
 		rrr_length initial_receive_data_len,
 		const struct rrr_http_application_callbacks *callbacks
 ) {
 	int ret = 0;
 
-	if ((ret = __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, initial_receive_data, initial_receive_data_len, is_server, callbacks)) != 0) {
+	if ((ret = __rrr_http_application_http2_new(
+			(struct rrr_http_application_http2 **) target,
+			initial_receive_data,
+			initial_receive_data_len,
+			is_server,
+			debug_name,
+			callbacks
+	)) != 0) {
 		goto out;
 	}
 
@@ -759,6 +782,7 @@ int rrr_http_application_http2_new_from_upgrade (
 		rrr_length initial_receive_data_len,
 		struct rrr_http_transaction *transaction,
 		int is_server,
+		const char *debug_name,
 		const struct rrr_http_application_callbacks *callbacks
 ) {
 	struct rrr_http_application_http2 *result = NULL;
@@ -772,6 +796,7 @@ int rrr_http_application_http2_new_from_upgrade (
 			initial_receive_data,
 			initial_receive_data_len,
 			is_server,
+			debug_name,
 			callbacks
 	)) != 0) {
 		goto out;

@@ -863,6 +863,7 @@ int main (int argc, const char **argv, const char **env) {
 				? RRR_HTTP_CLIENT_IDLE_TIMEOUT_KEEPALIVE_S * 1000
 				: RRR_HTTP_CLIENT_IDLE_TIMEOUT_S * 1000,
 			0,      // No send chunk limit
+			"httpclient",
 			&callbacks
 	) != 0) {
 		ret = EXIT_FAILURE;

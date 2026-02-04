@@ -2218,7 +2218,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		&callback_data
 	};
 
-	if (rrr_http_server_new(&data->http_server, &callbacks) != 0) {
+	if (rrr_http_server_new(&data->http_server, INSTANCE_D_NAME(thread_data), &callbacks) != 0) {
 		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;

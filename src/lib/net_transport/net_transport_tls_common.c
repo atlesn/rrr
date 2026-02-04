@@ -49,7 +49,7 @@ static int __rrr_net_transport_tls_common_alpn_populate (
 		goto out;
 
 	if ((target->protos = rrr_allocate(in_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for ALPN protos in %s\n");
+		RRR_MSG_0("Could not allocate memory for ALPN protos in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}

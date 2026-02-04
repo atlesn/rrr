@@ -401,7 +401,7 @@ static int __rrr_instance_config_parse_name_or_definition_from_config_silent_fai
 			if (rrr_parse_match_word(&pos, ",")) {
 				rrr_parse_ignore_space_and_tab(&pos);
 				if (!rrr_parse_match_word(&pos, tag_start)) {
-					RRR_MSG_0("Expected tag start %s after comma\n");
+					RRR_MSG_0("Expected tag start %s after comma\n", tag_start);
 					ret = 1;
 					goto out;
 				}

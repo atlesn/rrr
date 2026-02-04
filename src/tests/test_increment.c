@@ -37,7 +37,7 @@ static int __test_increment_bits_to_max (void) {
 	for (int i = 0; i <= 64; i++) {
 		uint64_t max = rrr_increment_bits_to_max(i);
 		if (max != acc) {
-			RRR_MSG_1("rrr_increment_bits_to_max(%d) returned %llu, expected %llu\n", i, max, acc);
+			RRR_MSG_1("rrr_increment_bits_to_max(%d) returned %" PRIu64 ", expected %" PRIu64 "\n", i, max, acc);
 			ret = 1;
 		}
 		acc = (acc << 1) | 1;
@@ -218,9 +218,9 @@ static int __test_increment_prefix_apply (void) {
 
 	if ((value = rrr_increment_strip_prefix(&prefix, res, max)) != 0xbeef || prefix != 0x12345678) {
 		RRR_MSG_0("rrr_increment_strip prefix returned %" PRIx32 " and %" PRIx64 " while " \
-			"%" PRIx32 " and %" PRIx64 " was expected\n",
+			"%" PRIx32 " and %lx was expected\n",
 			value, res,
-			0xbeef, 0x12345678);
+			0xbeef, 0x12345678l);
 		ret = 1;
 	}
 

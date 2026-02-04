@@ -29,6 +29,7 @@ struct rrr_http_application_callbacks;
 
 int rrr_http_application_http1_new (
 		struct rrr_http_application **target,
+		const char *debug_name,
 		const struct rrr_http_application_callbacks *callbacks
 );
 

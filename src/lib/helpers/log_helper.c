@@ -157,7 +157,7 @@ int rrr_log_helper_extract_log_fields_from_array (
 	}
 
 	if ((log_flags_tmp & ~(RRR_MSG_LOG_F_ALL)) != 0) {
-		RRR_MSG_0("Invalid flags %" PRIx64 " in log flags\n");
+		RRR_MSG_0("Invalid flags %" PRIx64 " in log flags\n", log_flags_tmp);
 		ret = RRR_LOG_HELPER_SOFT_ERROR;
 		goto out;
 	}

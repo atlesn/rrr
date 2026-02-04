@@ -33,7 +33,7 @@ void rrr_net_transport_connection_id_to_str (
 		const struct rrr_net_transport_connection_id *id
 ) {
 	if (buf_len < id->length * 2 + 1) {
-		RRR_BUG("Output buffer too small in %s (%s<%s)\n", __func__, buf_len, id->length);
+		RRR_BUG("Output buffer too small in %s (%zu<%zu)\n", __func__, buf_len, id->length);
 	}
 
 	*buf = '\0';

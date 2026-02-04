@@ -531,7 +531,7 @@ int __rrr_net_transport_openssl_accept (
 		char buf[128];
 		rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &accept_data->addr, accept_data->len);
 		RRR_DBG_7("OpenSSL accepted connection on port %u from %s transport handle %p/%i\n",
-				listen_ssl_data->ip_data.port, buf, listen_handle->transport, new_handle);
+				listen_ssl_data->ip_data.port, buf, listen_handle->transport, *new_handle);
 	}
 
 	ret = callback (

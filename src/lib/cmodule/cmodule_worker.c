@@ -729,8 +729,8 @@ static int __rrr_cmodule_worker_event_periodic (
 				if (ret_tmp == RRR_EVENT_EXIT) {
 					return ret_tmp;
 				}
-				RRR_MSG_0("Error from PING callback in worker %s pid %i return was %i\n",
-						worker->name, (long) getpid(), ret_tmp);
+				RRR_MSG_0("Error from PING callback in worker %s pid %li return was %i\n",
+						worker->name, (long int) getpid(), ret_tmp);
 			}
 		}
 		// Always set to 0, maybe this fork should be killed if PONG messages

@@ -32,6 +32,7 @@ void rrr_http_application_http3_alpn_protos_get (
 int rrr_http_application_http3_new (
 		struct rrr_http_application **result,
 		int is_server,
+		const char *debug_name,
 		const struct rrr_http_application_callbacks *callbacks
 );
 

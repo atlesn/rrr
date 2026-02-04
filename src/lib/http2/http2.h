@@ -64,7 +64,8 @@ int rrr_http2_session_new_or_reset (
 		struct rrr_http2_session **target,
 		void **initial_receive_data,
 		rrr_length initial_receive_data_len,
-		int is_server
+		int is_server,
+		const char *debug_name
 );
 void rrr_http2_session_destroy_if_not_null (
 		struct rrr_http2_session **target
@@ -104,10 +105,6 @@ int rrr_http2_header_status_submit (
 		unsigned int response_code
 );
 int rrr_http2_headers_end (
-		struct rrr_http2_session *session,
-		int32_t stream_id
-);
-int rrr_http2_response_submit (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 );

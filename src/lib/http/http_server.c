@@ -70,6 +70,7 @@ static int __rrr_http_server_unique_id_generator_callback_dummy (
 
 int rrr_http_server_new (
 		struct rrr_http_server **target,
+		const char *debug_name,
 		const struct rrr_http_server_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -85,6 +86,7 @@ int rrr_http_server_new (
 
 	memset(server, '\0', sizeof(*server));
 
+	server->debug_name = debug_name;
 	server->callbacks = *callbacks;
 
 	// Must be set for HTTP application to run in server mode
@@ -233,6 +235,7 @@ static int __rrr_http_server_transport_ctx_application_ensure (
 			&application,
 			type,
 			1, // Is server
+			http_server->debug_name,
 			&callbacks
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP application in %s\n", __func__);
