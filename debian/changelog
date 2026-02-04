@@ -1,4 +1,4 @@
-rrr (1.40-3) trixie; urgency=medium
+rrr (1.40-4) trixie; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
   * Changes:
@@ -8,6 +8,10 @@ rrr (1.40-3) trixie; urgency=medium
     * The rrr_sub MQTT utility supports nice print of JSON messages
     * New module for GPIO control
     * New configuration parameter X_worker_fanout to duplicate messages to cmodule workers
+
+  * Fixes:
+    * Conformity to HTTP2 library with respect to when data for response or request
+      is submitted
 
  -- Atle Solbakken <atle@goliathdns.no>  Thu, 18 Dec 2025 09:30:54 +0100
 
