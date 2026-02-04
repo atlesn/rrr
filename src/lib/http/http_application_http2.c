@@ -525,6 +525,9 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 			}
 			goto out;
 		}
+		else {
+			transaction->need_response = 0;
+		}
 
 		assert(stream_id <= INT32_MAX);
 
