@@ -28,7 +28,7 @@ sub source_client {
 		$message->{'topic'} = 'request';
 		$message->push_tag_str('http_method', 'put');
 		$message->push_tag_str('http_endpoint', '/bodiful');
-		$message->push_tag_str('http_body', "body" x 256);
+		$message->push_tag_str('http_body', "body" x 786432);
 		$message->send();
 	}
 	else {
@@ -58,7 +58,7 @@ sub process_client {
 		die "Incorrect response code" unless $code == 200;
 		die "Double body" if $client_ok & 2;
 		die "Expected body" unless defined $body;
-		die "Incorrect body" unless $body eq "body" x 256;
+		die "Incorrect body" unless $body eq "body" x 786432;
 		$client_ok |= 2;
 	}
 	else {
@@ -94,7 +94,7 @@ sub process_server {
 		die "Double body" if $server_ok & 2;
 		die "No body in bodiful" unless defined $body;
 		die "Method was not PUT" unless $method eq "PUT";
-		die "Incorrect body" unless $body eq "body" x 256;
+		die "Incorrect body" unless $body eq "body" x 786432;
 		$message->push_tag_h("http_response_code", 200);
 		$server_ok |= 2;
 	}

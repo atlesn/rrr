@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // The actual ping and maintenance interval will depend on how often the tick function is called
 #define RRR_HTTP2_PING_MAINTENANCE_INTERVAL_S 1
+#define RRR_HTTP2_WINDOW_SIZE (1 * 1024 * 1024) // 1MB
 
 struct rrr_http2_session;
 
@@ -61,6 +62,8 @@ struct rrr_http2_session {
 	uint64_t last_ping_send_time;
 	uint64_t last_ping_receive_time;
 	uint64_t closed_stream_count;
+	int got_window_update;
+	int is_server;
 	const char *debug_name;
 };
 
@@ -392,6 +395,11 @@ static int __rrr_http2_on_frame_send_callback (
 				session->debug_name, frame->hd.type, frame->hd.stream_id);
 			stream->flags |= RRR_HTTP_DATA_SEND_FLAG_IS_HEADERS_END;
 
+			if (!session->is_server && nghttp2_session_set_local_window_size(nghttp2_session, 0, frame->hd.stream_id, RRR_HTTP2_WINDOW_SIZE) != 0) {
+				RRR_MSG_0("Could not set window size in %s\n", __func__);
+				return NGHTTP2_ERR_CALLBACK_FAILURE;
+			}
+
 			if (__rrr_http2_data_submit_if_needed(session, stream, frame->hd.stream_id) != 0) {
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			}
@@ -400,8 +408,19 @@ static int __rrr_http2_on_frame_send_callback (
 		}
 	}
 
-	RRR_DBG_7 ("http2 [%s] sent frame type %" PRIu8 " stream %" PRIi32 " length %llu\n",
-		session->debug_name, frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length);
+	if (frame->hd.type == NGHTTP2_WINDOW_UPDATE) {
+		RRR_DBG_7 ("http2 [%s] send window update stream %" PRIi32 " increment %" PRIi32 " local %" PRIi32 "/%" PRIi32 "\n",
+			session->debug_name,
+			frame->hd.stream_id,
+			frame->window_update.window_size_increment,
+			nghttp2_session_get_stream_local_window_size(nghttp2_session, frame->hd.stream_id),
+			nghttp2_session_get_local_window_size(nghttp2_session)
+		);
+	}
+	else {
+		RRR_DBG_7 ("http2 [%s] sent frame type %" PRIu8 " stream %" PRIi32 " length %llu\n",
+			session->debug_name, frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length);
+	}
 
 	return 0;
 }
@@ -427,6 +446,17 @@ static int __rrr_http2_on_frame_recv_callback (
 		RRR_DBG_7 ("http2 [%s] recv goaway code %" PRIu32 "\n", session->debug_name, frame->goaway.error_code);
 		return 0;
 	}
+	else if (frame->hd.type == NGHTTP2_WINDOW_UPDATE) {
+		RRR_DBG_7 ("http2 [%s] recv window update stream %" PRIi32 " increment %" PRIi32 " remote %" PRIi32 "/%" PRIi32 "\n",
+			session->debug_name,
+			frame->hd.stream_id,
+			frame->window_update.window_size_increment,
+			nghttp2_session_get_stream_remote_window_size(nghttp2_session, frame->hd.stream_id),
+			nghttp2_session_get_remote_window_size(nghttp2_session)
+		);
+		session->got_window_update = 1;
+		return 0;
+	}
 	else if (frame->hd.type != NGHTTP2_HEADERS && frame->hd.type != NGHTTP2_DATA) {
 		return 0;
 	}
@@ -443,6 +473,10 @@ static int __rrr_http2_on_frame_recv_callback (
 		}
 
 		if (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) {
+			if (session->is_server && nghttp2_session_set_local_window_size(nghttp2_session, 0, frame->hd.stream_id, RRR_HTTP2_WINDOW_SIZE) != 0) {
+				RRR_MSG_0("Could not set window size in %s\n", __func__);
+				return NGHTTP2_ERR_CALLBACK_FAILURE;
+			}
 			stream->flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END;
 		}
 
@@ -694,6 +728,12 @@ int rrr_http2_session_new_or_reset (
 		}
 	}
 
+	if (nghttp2_session_set_local_window_size(result->session, 0, 0, RRR_HTTP2_WINDOW_SIZE) != 0) {
+		RRR_MSG_0("Could not set window size in rrr_http2_session_new_or_reset\n");
+		ret = 1;
+		goto out_free;
+	}
+
 	if (initial_receive_data != NULL && *initial_receive_data != NULL) {
 #if RRR_LENGTH_MAX > SSIZE_MAX
 		if (initial_receive_data_len > SSIZE_MAX) {
@@ -708,6 +748,7 @@ int rrr_http2_session_new_or_reset (
 		*initial_receive_data = NULL;
 	}
 
+	result->is_server = is_server;
 	result->debug_name = debug_name;
 	result->last_ping_send_time = result->last_ping_receive_time = rrr_time_get_64();
 
@@ -1053,6 +1094,10 @@ int rrr_http2_need_tick (
 		struct rrr_http2_session *session
 ) {
 	/* When a request is created and ready to be sent, we need to tick more */
+	if (session->got_window_update) {
+		session->got_window_update = 0;
+		return 1;
+	}
 	return nghttp2_session_want_write(session->session) || session->initial_receive_data_len > 0;
 }
 
@@ -1076,13 +1121,15 @@ int rrr_http2_transport_ctx_tick (
 
 	// Always update callback data. Persistent user_data pointer was set in the
 	// new() function
-	struct rrr_http2_callback_data callback_data = {
-			handle,
-			data_receive_callback,
-			data_source_callback,
-			callback_arg
-	};
-	session->callback_data = callback_data;
+	{
+		struct rrr_http2_callback_data callback_data = {
+				handle,
+				data_receive_callback,
+				data_source_callback,
+				callback_arg
+		};
+		session->callback_data = callback_data;
+	}
 
 	// Parse any overshoot data from HTTP/1.1 parsing
 	if (session->initial_receive_data != NULL) {

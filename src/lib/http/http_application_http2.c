@@ -546,11 +546,11 @@ static int __rrr_http_application_http2_tick (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
-	int ret = 0;
-
 	(void)(received_bytes);
 	(void)(upgraded_app);
 	(void)(read_max_size);
+
+	int ret = 0;
 
 	struct rrr_http_application_http2_callback_data callback_data = {
 			http2,
