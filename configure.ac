@@ -122,10 +122,10 @@ AS_IF([ test "x$CC" = "xgcc" ], [
 	CFLAGS_COMMON_GCC="-Wno-clobbered"
 ])
 CFLAGS_CONFIG="-include $srcdir/config.h -include $srcdir/build_timestamp.h"
-CFLAGS_COMMON="-include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra $CFLAGS_COMMON_GCC -D_XOPEN_SOURCE=700 -gdwarf-4"
+CFLAGS_COMMON="-Wunreachable-code -Wextra $CFLAGS_COMMON_GCC -gdwarf-4"
 CPPFLAGS="-I/usr/local/include -I/usr/include"
 LDFLAGS="-L/usr/local/lib -L/usr/lib -L/lib"
-AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_CONFIG $CFLAGS_COMMON -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
+AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_CONFIG $CFLAGS_COMMON -D_XOPEN_SOURCE=700 -include $srcdir/src/lib/intercept.h -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
 AM_LDFLAGS=""
 
 AC_MSG_CHECKING([for AM_CFLAGS])
@@ -137,7 +137,7 @@ AC_SUBST(AM_LDFLAGS)
 
 AC_MSG_CHECKING([for V8 C++ on FreeBSD (which requires using libc++)])
 AS_IF([test "x$enable_js" != "xno" -a "x$with_v8" != "xno" -a "x$is_freebsd" != "xno"],[
-	FREEBSD_V8_CXXFLAGS="-stdlib=libc++ -DRRR_INTERCEPT_ALLOW_STRERROR"
+	FREEBSD_V8_CXXFLAGS="-stdlib=libc++"
 	FREEBSD_V8_LIBS="-lc++"
 	AC_MSG_RESULT([$FREEBSD_V8_CXXFLAGS])
 ],[
@@ -156,7 +156,7 @@ if test "x$enable_js" != xno; then # autotools complains when using AC_PROG_CXX 
 	AC_LANG_PUSH([C++])
 	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
 	AC_LANG_POP([C++])
-	FREEBSD_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_FORK $FREEBSD_V8_CXXFLAGS"
+	FREEBSD_CXXFLAGS="$FREEBSD_V8_CXXFLAGS"
 	CLANG_CXXFLAGS="-Wno-unused-parameter"
 	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++20 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS $FREEBSD_CXXFLAGS $CLANG_CXXFLAGS"
 	TEST_CXXFLAGS="-std=c++20 $CFLAGS_COMMON -O3 $FREEBSD_V8_CXXFLAGS"
@@ -863,7 +863,7 @@ AS_IF([test "x$enable_v8" != xno],[
 		fi
 	fi
 
-	JS_CXXFLAGS="$v8_cflags -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT -DV8_DEPRECATION_WARNINGS"
+	JS_CXXFLAGS="$v8_cflags -DV8_DEPRECATION_WARNINGS"
 	JS_LDFLAGS="$v8_ldflags"
 	JS_LIBS="$v8_libs $CXXLIBS"
 
@@ -903,7 +903,7 @@ AS_IF([test "x$enable_node" != xno], [
 		AC_MSG_ERROR("not found")
 	fi
 
-	JS_CXXFLAGS="-I$node_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
+	JS_CXXFLAGS="-I$node_include_dir"
 	JS_LDFLAGS=""
 	JS_LIBS="-lstdc++ -lnode"
 	V8TESTS
