@@ -2277,12 +2277,16 @@ static int __rrr_net_transport_new (
 
 	struct rrr_net_transport *new_transport = NULL;
 
+	if (config->tls_no_cert_verify) {
+		flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
+	}
+
 	switch (config->transport_type_p) {
 		case RRR_NET_TRANSPORT_PLAIN:
 			if (flags != 0) {
 				RRR_BUG("BUG: Plain method does not support flags in %s but flags were given\n", __func__);
 			}
-			if (config->tls_certificate_file != NULL || config->tls_key_file != NULL || config->tls_ca_file != NULL || config->tls_ca_path != NULL) {
+			if (config->tls_certificate_file != NULL || config->tls_key_file != NULL || config->tls_ca_file != NULL || config->tls_ca_path != NULL || config->tls_no_cert_verify) {
 				RRR_BUG("BUG: Plain method does not support TLS parameters in %s but they were given\n", __func__);
 			}
 			if (alpn_protos != NULL) {

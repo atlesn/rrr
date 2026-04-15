@@ -35,6 +35,8 @@ struct rrr_net_transport_config {
 	char *tls_ca_file;
 	char *tls_ca_path;
 
+	int tls_no_cert_verify;
+
 	enum rrr_net_transport_type transport_type_p;
 	enum rrr_net_transport_type_f transport_type_f;
 

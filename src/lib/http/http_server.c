@@ -840,6 +840,7 @@ int rrr_http_server_start_plain (
 			NULL,
 			NULL,
 			NULL,
+			0,
 			RRR_NET_TRANSPORT_PLAIN,
 			RRR_NET_TRANSPORT_F_PLAIN,
 			0

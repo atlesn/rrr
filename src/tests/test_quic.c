@@ -310,6 +310,7 @@ int rrr_test_quic (const volatile int *main_running, struct rrr_event_queue *que
 		"../../misc/ssl/rrr.key",
 		NULL,
 		NULL,
+		0,
 		RRR_NET_TRANSPORT_QUIC,
 		RRR_NET_TRANSPORT_F_QUIC,
 		0
@@ -320,6 +321,7 @@ int rrr_test_quic (const volatile int *main_running, struct rrr_event_queue *que
 		NULL,
 		"../../misc/ssl/rootca/goliathdns.no.crt",
 		"../../misc/ssl/rootca",
+		0,
 		RRR_NET_TRANSPORT_QUIC,
 		RRR_NET_TRANSPORT_F_QUIC,
 		0
