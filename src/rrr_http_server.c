@@ -600,6 +600,7 @@ int main (int argc, const char **argv, const char **env) {
 				data.private_key_file,
 				NULL,
 				NULL,
+				0,
 				RRR_NET_TRANSPORT_TLS,
 				RRR_NET_TRANSPORT_F_TLS,
 				RRR_NET_TRANSPORT_TLS_NONE
@@ -636,6 +637,7 @@ int main (int argc, const char **argv, const char **env) {
 				data.private_key_file,
 				NULL,
 				NULL,
+				0,
 				RRR_NET_TRANSPORT_QUIC,
 				RRR_NET_TRANSPORT_F_QUIC,
 				RRR_NET_TRANSPORT_TLS_NONE

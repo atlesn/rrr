@@ -213,8 +213,13 @@ int rrr_net_transport_openssl_common_new_ctx (
 	}
 
 	// NULL callback causes verification failure to cancel further processing
-	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
-	SSL_CTX_set_verify_depth(ctx, 4);
+	if (flags & RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY) {
+		SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+	}
+	else {
+		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+		SSL_CTX_set_verify_depth(ctx, 4);
+	}
 
 	// Unused flag: SSL_OP_NO_TLSv1_2, we need to support 1.2
 	// TODO : Apparently the version restrictions with set_options are deprecated

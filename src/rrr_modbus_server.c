@@ -161,7 +161,7 @@ static int __make_response (
 			dst_buf[4] = 0;     // Length high
 			dst_buf[5] = 4;     // Length low
 			dst_buf[8] = 1;     // Byte count
-			dst_buf[9] = 0x01;  // Coil status 0
+			dst_buf[9] = 0x55;  // Coil status
 			*dst_buf_size = 10;
 			*bytes_consumed = 12;
 			break;

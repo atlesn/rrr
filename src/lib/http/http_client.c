@@ -1396,6 +1396,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 			NULL,
 			NULL,
 			NULL,
+			0,
 			RRR_NET_TRANSPORT_PLAIN,
 			RRR_NET_TRANSPORT_F_PLAIN,
 			0

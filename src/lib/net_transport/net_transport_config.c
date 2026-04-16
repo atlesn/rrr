@@ -209,6 +209,9 @@ int rrr_net_transport_config_parse (
 	RRR_INSTANCE_CONFIG_STRING_SET("_tls_ca_path");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, tls_ca_path);
 
+	RRR_INSTANCE_CONFIG_STRING_SET("_tls_no_cert_verify");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, tls_no_cert_verify, 0);
+
 	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
 			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
 	) {
