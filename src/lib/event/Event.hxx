@@ -30,6 +30,7 @@ struct rrr_event_queue;
 
 #include "../util/E.hxx"
 
+#include <cstdint>
 #include <forward_list>
 #include <memory>
 #include <string>
