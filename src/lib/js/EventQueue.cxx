@@ -53,9 +53,13 @@ namespace RRR::JS {
 					__PRETTY_FUNCTION__);
 			}
 			next_interval = 1;
+			this->next_exec_time = now;
 		}
-		else if ((uint64_t) next_interval > default_interval_us) {
-			next_interval = default_interval_us;
+		else {
+			if ((uint64_t) next_interval > default_interval_us) {
+				next_interval = default_interval_us;
+			}
+			this->next_exec_time = now + next_interval;
 		}
 
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
@@ -68,8 +72,11 @@ namespace RRR::JS {
 
 	void EventQueue::dispatch() {
 		// The event list must be sorted by execution time.
-		const int max = 10;
+		const int max = 100;
 		int i = -1;
+		int64_t start_time = RRR::util::time_get_i64();
+		if (start_time < next_exec_time)
+			return;
 		while (i++ < max) {
 			// Get now time each round in case callback is slow
 			int64_t now = RRR::util::time_get_i64();
@@ -126,6 +133,9 @@ namespace RRR::JS {
 				// The following events cannot have lower execution time
 				goto done;
 			} while(0);
+
+			if (i > 0 && i % 20 == 0)
+				gc_callback();
 		}
 
 		done:
@@ -133,8 +143,6 @@ namespace RRR::JS {
 		if (i >= max) {
 			RRR_MSG_0("Warning: Max outer iterations reached in %s\n", __PRETTY_FUNCTION__);
 		}
-
-		set_next_exec_time();
 	}
 
 	bool EventQueue::accept(std::weak_ptr<Persistable> object, const char *identifier, void *arg) {
@@ -153,12 +161,14 @@ namespace RRR::JS {
 
 	std::function<void(EventQueue *)> EventQueue::callback([](EventQueue *queue){
 		queue->dispatch();
+		queue->set_next_exec_time();
 	});
 
-	EventQueue::EventQueue(CTX &ctx, PersistentStorage &persistent_storage, RRR::Event::Collection &collection) :
+	EventQueue::EventQueue(CTX &ctx, PersistentStorage &persistent_storage, RRR::Event::Collection &collection, std::function<void(void)> gc_callback) :
 		timeout_events(),
 		ctx(ctx),
 		collection(collection),
+		gc_callback(gc_callback),
 		handle()
 	{
 		persistent_storage.register_sniffer(this);

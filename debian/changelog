@@ -1,4 +1,4 @@
-rrr (1.40-5) trixie; urgency=medium
+rrr (1.40-6) trixie; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -15,6 +15,10 @@ rrr (1.40-5) trixie; urgency=medium
   * Fixes:
     * Conformity to HTTP2 library with respect to when data for response or request
       is submitted
+
+  * Misc:
+    * In JS, attempt to run events and GC more often, hopefully reducing
+      backlogs and long processing times.
 
  -- Atle Solbakken <atle@goliathdns.no>  Thu, 18 Dec 2025 09:30:54 +0100
 

@@ -81,6 +81,7 @@ namespace RRR::JS {
 		constexpr static const uint64_t initial_interval_us = 1 * 1000;        // 1 millisecond
 		constexpr static const uint64_t default_interval_us = 1 * 1000 * 1000; // 1 second
 		static std::function<void(EventQueue *)> callback;
+		std::function<void()> gc_callback;
 		class CompareExecTime {
 			public:
 			bool operator()(const Event &a, const Event &b) const {
@@ -91,9 +92,9 @@ namespace RRR::JS {
 		CTX &ctx;
 		RRR::Event::Collection &collection;
 		std::shared_ptr<RRR::Event::HandleBase> handle;
+		int64_t next_exec_time = 0;
 
 		void set_next_exec_time();
-		void dispatch();
 
 		protected:
 		bool accept(std::weak_ptr<Persistable> object, const char *identifier, void *arg) final;
@@ -101,7 +102,8 @@ namespace RRR::JS {
 		public:
 		constexpr static const char MSG_SET_TIMEOUT[] = "EventQueue/set_timeout";
 
-		EventQueue(CTX &ctx, PersistentStorage &persistent_storage, RRR::Event::Collection &collection);
+		EventQueue(CTX &ctx, PersistentStorage &persistent_storage, RRR::Event::Collection &collection, std::function<void(void)> gc_callback);
 		EventQueue(const EventQueue &) = delete;
+		void dispatch();
 	};
 }; // namespace RRR::JS
