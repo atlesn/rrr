@@ -121,6 +121,7 @@ class js_run_data {
 	RRR::JS::OSFactory os_factory;
 	RRR::JS::EventQueue event_queue;
 
+	std::shared_ptr<RRR::Event::HandleBase> gc_event_handle;
 	std::shared_ptr<RRR::JS::Program> program;
 	std::unordered_map<std::string,RRR::JS::Function> methods;
 
@@ -198,6 +199,7 @@ class js_run_data {
 		ctx.trycatch_ok([](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
+		dispatchEvents();
 	}
 
 	void runProcessDirectDispatch (RRR::JS::Value message, const char *method) {
@@ -205,7 +207,7 @@ class js_run_data {
 			message
 		};
 		methods[method].run(ctx, 1, args);
-	};
+	}
 
 	void runProcessDefault (RRR::JS::Value message, const char *method) {
 		RRR::JS::Value args[] = {
@@ -215,7 +217,7 @@ class js_run_data {
 				: (RRR::JS::Value) RRR::JS::Undefined(ctx)
 		};
 		process.run(ctx, 2, args);
-	};
+	}
 
 	void runProcess(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, const char *method, enum rrr_cmodule_process_mode mode) {
 		auto scope = RRR::JS::Scope(ctx);
@@ -234,7 +236,14 @@ class js_run_data {
 		ctx.trycatch_ok([](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
+
+		dispatchEvents();
 	}
+
+	void dispatchEvents() {
+		event_queue.dispatch(); 
+	}
+
 	void registerMethod(const char *name) {
 		methods[name] = program->get_function(ctx, name);
 	}
@@ -266,14 +275,22 @@ class js_run_data {
 		cfg_factory(ctx, persistent_storage),
 		timeout_factory(ctx, persistent_storage),
 		os_factory(ctx, persistent_storage),
-		event_queue(ctx, persistent_storage, event_collection),
+		event_queue(ctx, persistent_storage, event_collection, [&](){
+			runGC();
+		}),
 		program(make_program()),
-		start_time((int64_t) rrr_time_get_64())
+		start_time((int64_t) rrr_time_get_64()),
+		gc_event_handle(event_collection.push_periodic([](auto run_data){
+			run_data->dispatchEvents();
+			run_data->runGC();
+		}, this, 300 * 1000 /* 300 ms */))
 	{
 		msg_factory.register_as_global(ctx);
 		cfg_factory.register_as_global(ctx);
 		timeout_factory.register_as_global(ctx);
 		os_factory.register_as_global(ctx);
+
+		gc_event_handle->add();
 
 		if (!program->is_compiled()) {
 			ctx.trycatch_ok([](std::string &&msg){
@@ -383,8 +400,6 @@ static int js_periodic_callback(RRR_CMODULE_PERIODIC_CALLBACK_ARGS) {
 	(void)(worker);
 
 	try {
-		run_data->runGC();
-
 		// Assuming that the periodic function is called every second
 
 		run_data->status([run_data](
