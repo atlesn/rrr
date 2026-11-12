@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2026 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -68,7 +68,7 @@ void rrr_random_bytes(void *target, size_t bytes) {
 	unsigned char *dataptr = target;
 
 	for (size_t i = 0; i < bytes; i++) {
-		*dataptr = (unsigned char) rrr_rand() % 0xff;
+		*dataptr = (unsigned char) rrr_rand();
 		dataptr++;
 	}
 }

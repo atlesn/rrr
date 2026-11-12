@@ -1050,10 +1050,10 @@ static void __rrr_net_transport_quic_ngtcp2_cb_random (
 	rrr_random_bytes(dest, destlen);
 }
 
-static int __rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id (
+static int __rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id2 (
 		ngtcp2_conn *conn,
 		ngtcp2_cid *cid,
-		uint8_t *token,
+		ngtcp2_stateless_reset_token *token,
 		size_t cidlen,
 		void *user_data
 ) {
@@ -1075,7 +1075,7 @@ static int __rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id (
 	for (int max = 500; max > 0; max--) {
 		cid->datalen = cidlen;
 		rrr_random_bytes(&cid->data, cidlen);
-		rrr_random_bytes(token, NGTCP2_STATELESS_RESET_TOKENLEN);
+		rrr_random_bytes(token->data, sizeof(token->data));
 
 		__rrr_net_transport_quic_ngtcp2_cid_to_connection_id(&cid_, cid);
 
@@ -1379,7 +1379,7 @@ static int __rrr_net_transport_quic_ctx_new (
 			NULL, /* extend_max_local_streams_bidi */
 			NULL, /* extend_max_local_streams_uni */
 			__rrr_net_transport_quic_ngtcp2_cb_random,
-			__rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id,
+			NULL, /* get_new_connection_id (deprecated) */
 			__rrr_net_transport_quic_ngtcp2_cb_remove_connection_id,
 			ngtcp2_crypto_update_key_cb,
 			__rrr_net_transport_quic_ngtcp2_cb_path_validation,
@@ -1396,12 +1396,18 @@ static int __rrr_net_transport_quic_ctx_new (
 			NULL, /* recv_datagram */
 			NULL, /* ack_datagram */
 			NULL, /* lost_datagram */
-			ngtcp2_crypto_get_path_challenge_data_cb,
+			NULL, /* get_path_challenge_data (deprecated) */
 			__rrr_net_transport_quic_ngtcp2_cb_stream_stop_sending,
 			ngtcp2_crypto_version_negotiation_cb,
 			NULL, /* recv_rx_key */
 			NULL, /* recv_tx_key */
-			NULL  /* tls_early_data_rejected */
+			NULL, /* tls_early_data_rejected */
+			NULL, /* begin_path_validation */
+			NULL, /* recv_stateless_reset2 */
+			__rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id2,
+			NULL, /* dcid_status2 */
+			ngtcp2_crypto_get_path_challenge_data2_cb,
+			NULL, /* recv_stop_sending */
 		};
 
 		if ((ret_tmp = ngtcp2_conn_server_new (
@@ -1461,7 +1467,7 @@ static int __rrr_net_transport_quic_ctx_new (
 			NULL, /* extend_max_local_streams_bidi */
 			NULL, /* extend_max_local_streams_uni */
 			__rrr_net_transport_quic_ngtcp2_cb_random,
-			__rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id,
+			NULL, /* get_new_connection_id (deprecated) */
 			__rrr_net_transport_quic_ngtcp2_cb_remove_connection_id,
 			ngtcp2_crypto_update_key_cb,
 			__rrr_net_transport_quic_ngtcp2_cb_path_validation,
@@ -1478,12 +1484,18 @@ static int __rrr_net_transport_quic_ctx_new (
 			NULL, /* recv_datagram */
 			NULL, /* ack_datagram */
 			NULL, /* lost_datagram */
-			ngtcp2_crypto_get_path_challenge_data_cb,
+			NULL, /* get_path_challenge_data (deprecated) */
 			__rrr_net_transport_quic_ngtcp2_cb_stream_stop_sending,
 			ngtcp2_crypto_version_negotiation_cb,
 			NULL, /* recv_rx_key */
 			NULL, /* recv_tx_key */
-			NULL  /* tls_early_data_rejected */
+			NULL, /* tls_early_data_rejected */
+			NULL, /* begin_path_validation */
+			NULL, /* recv_stateless_reset2 */
+			__rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id2,
+			NULL, /* dcid_status2 */
+			ngtcp2_crypto_get_path_challenge_data2_cb,
+			NULL, /* recv_stop_sending */
 		};
 
 		if ((ret_tmp = ngtcp2_conn_client_new (

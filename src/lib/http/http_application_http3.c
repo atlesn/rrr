@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <nghttp3/nghttp3.h>
+#include <gnutls/crypto.h>
 #include <assert.h>
 
 #include "http_application_http3.h"
@@ -1432,6 +1433,15 @@ static int __rrr_http_application_http3_nghttp3_cb_shutdown (
 	return 0;
 }
 
+static void __rrr_http_application_http3_nghttp3_cb_rand (
+		uint8_t *dest,
+		size_t destlen
+) {
+	if (gnutls_rnd(GNUTLS_RND_RANDOM, dest, destlen) < 0) {
+		RRR_BUG("Failed to generate random number in %s", __func__);
+	}
+}
+
 static int __rrr_http_application_http3_nghttp3_cb_end_stream (
 		nghttp3_conn *conn,
 		int64_t stream_id,
@@ -1671,6 +1681,10 @@ static const nghttp3_callbacks rrr_http_application_http3_nghttp3_callbacks = {
 	__rrr_http_application_http3_nghttp3_cb_reset_stream,
 	__rrr_http_application_http3_nghttp3_cb_shutdown,
 	NULL, /* recv_settings */
+	NULL, /* recv_origin */
+	NULL, /* end_origin */
+	__rrr_http_application_http3_nghttp3_cb_rand,
+	NULL, /* recv_settings2 */
 };
 
 static const nghttp3_mem rrr_http_application_http3_nghttp3_mem = {
